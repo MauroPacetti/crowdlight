@@ -2,11 +2,10 @@
 (function () {
   const status = document.getElementById('status');
   const tapHint = document.getElementById('tapHint');
+  const groupBadge = document.getElementById('groupBadge');
   const body = document.body;
 
-  // Get zone from URL params
-  const params = new URLSearchParams(window.location.search);
-  const zone = params.get('zone');
+  let myGroup = null;
 
   // --- Wake Lock ---
   let wakeLock = null;
@@ -18,7 +17,6 @@
       }
     } catch (e) { /* silently fail */ }
   }
-  // Re-acquire on visibility change
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && !wakeLock) requestWakeLock();
   });
@@ -35,6 +33,15 @@
   }
   body.addEventListener('click', goFullscreen, { once: false });
   body.addEventListener('touchstart', goFullscreen, { once: false });
+
+  // --- Max brightness hint ---
+  function showBrightnessHint() {
+    if (status) {
+      status.textContent = 'Alza la luminosità al massimo!';
+      status.classList.add('visible');
+      setTimeout(() => status.classList.remove('visible'), 3000);
+    }
+  }
 
   // --- Socket.io connection ---
   const socket = io('/audience', {
@@ -55,7 +62,7 @@
 
   socket.on('connect', () => {
     showStatus('Connesso!', 2000);
-    if (zone) socket.emit('join-zone', zone);
+    setTimeout(showBrightnessHint, 2500);
   });
 
   socket.on('disconnect', () => {
@@ -64,7 +71,17 @@
 
   socket.on('reconnect', () => {
     showStatus('Riconnesso!', 2000);
-    if (zone) socket.emit('join-zone', zone);
+  });
+
+  // --- Group assignment ---
+  socket.on('assigned', (data) => {
+    myGroup = data.group;
+    if (groupBadge) {
+      groupBadge.textContent = 'G' + data.group;
+      groupBadge.classList.add('visible');
+      // Hide after 5 seconds
+      setTimeout(() => groupBadge.classList.remove('visible'), 5000);
+    }
   });
 
   // --- Color handling ---
@@ -90,25 +107,20 @@
         body.classList.add('effect-solid');
         body.style.backgroundColor = color;
         break;
-
       case 'fade':
         body.style.transition = 'background-color ' + duration + 'ms ease';
         body.classList.add('effect-fade');
-        // Force reflow then set color
         void body.offsetHeight;
         body.style.backgroundColor = color;
         break;
-
       case 'pulse':
         body.style.backgroundColor = color;
         body.classList.add('effect-pulse');
         break;
-
       case 'strobe':
         body.style.backgroundColor = color;
         body.classList.add('effect-strobe');
         break;
-
       default:
         body.classList.add('effect-solid');
         body.style.backgroundColor = color;
@@ -116,7 +128,7 @@
 
     currentEffect = effect;
 
-    // Update theme-color meta for mobile browsers
+    // Update theme-color meta
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', color);
   });
@@ -126,10 +138,10 @@
     tapHint.classList.add('hidden');
   });
 
-  // --- Prevent scrolling / pull-to-refresh ---
+  // Prevent scrolling / pull-to-refresh
   document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
-  // --- Register service worker ---
+  // Register service worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }

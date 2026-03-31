@@ -17,7 +17,7 @@
     .header {
       background: #151515;
       border-bottom: 1px solid #222;
-      padding: 1rem 1.5rem;
+      padding: 0.8rem 1.5rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -25,302 +25,216 @@
       top: 0;
       z-index: 100;
     }
-    .header h1 {
-      font-size: 1.2rem;
-      font-weight: 700;
-    }
+    .header h1 { font-size: 1.2rem; font-weight: 700; }
     .header h1 span { color: #764ba2; }
-    .stats-bar {
-      display: flex;
-      gap: 1.5rem;
-      align-items: center;
-    }
-    .stat {
-      text-align: center;
-    }
-    .stat-num {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: #4ecdc4;
-    }
-    .stat-label {
-      font-size: 0.65rem;
-      color: #888;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .conn-dot {
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      background: #e74c3c;
-      display: inline-block;
-    }
+    .stats-bar { display: flex; gap: 1.5rem; align-items: center; }
+    .stat { text-align: center; }
+    .stat-num { font-size: 1.5rem; font-weight: 700; color: #4ecdc4; }
+    .stat-label { font-size: 0.65rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+    .conn-dot { width: 10px; height: 10px; border-radius: 50%; background: #e74c3c; display: inline-block; }
     .conn-dot.connected { background: #2ecc71; }
 
     /* --- Login --- */
     .login-overlay {
-      position: fixed;
-      inset: 0;
+      position: fixed; inset: 0;
       background: rgba(0,0,0,0.95);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: flex; align-items: center; justify-content: center;
       z-index: 200;
     }
     .login-overlay.hidden { display: none; }
     .login-box {
-      background: #1a1a1a;
-      padding: 2rem;
-      border-radius: 16px;
-      text-align: center;
-      width: 320px;
+      background: #1a1a1a; padding: 2rem; border-radius: 16px;
+      text-align: center; width: 320px;
     }
     .login-box h2 { margin-bottom: 1rem; font-size: 1.3rem; }
     .login-box input {
-      width: 100%;
-      padding: 0.8rem;
-      border-radius: 8px;
-      border: 1px solid #333;
-      background: #0d0d0d;
-      color: #fff;
-      font-size: 1rem;
-      margin-bottom: 1rem;
+      width: 100%; padding: 0.8rem; border-radius: 8px;
+      border: 1px solid #333; background: #0d0d0d; color: #fff;
+      font-size: 1rem; margin-bottom: 1rem;
     }
     .login-box .error { color: #e74c3c; font-size: 0.8rem; margin-bottom: 0.5rem; display: none; }
 
-    /* --- Main Layout --- */
-    .main {
-      display: grid;
-      grid-template-columns: 1fr 320px;
-      gap: 1rem;
-      padding: 1rem 1.5rem;
-      max-width: 1400px;
-      margin: 0 auto;
-    }
-    @media (max-width: 900px) {
-      .main { grid-template-columns: 1fr; }
-    }
-
     /* --- Panels --- */
     .panel {
-      background: #151515;
-      border: 1px solid #222;
-      border-radius: 12px;
-      padding: 1.2rem;
-      margin-bottom: 1rem;
+      background: #151515; border: 1px solid #222;
+      border-radius: 12px; padding: 1rem; margin-bottom: 0.8rem;
     }
     .panel-title {
-      font-size: 0.75rem;
-      color: #888;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 1rem;
+      font-size: 0.7rem; color: #888;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-bottom: 0.8rem;
     }
 
-    /* --- Color Picker --- */
-    .color-picker-row {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      margin-bottom: 1rem;
-    }
-    #colorPicker {
-      width: 60px;
-      height: 60px;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      background: none;
-      padding: 0;
-    }
-    #colorPicker::-webkit-color-swatch-wrapper { padding: 0; }
-    #colorPicker::-webkit-color-swatch { border: 2px solid #333; border-radius: 10px; }
-    #colorHex {
-      font-family: monospace;
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: #fff;
-    }
-
-    /* --- Preset Colors --- */
-    .presets {
+    /* --- Main layout --- */
+    .main {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
-      gap: 8px;
-      margin-bottom: 1rem;
+      grid-template-columns: 1fr 360px;
+      gap: 1rem;
+      padding: 1rem;
+      max-width: 1600px;
+      margin: 0 auto;
     }
-    .preset-btn {
-      width: 100%;
-      aspect-ratio: 1;
+    @media (max-width: 1000px) { .main { grid-template-columns: 1fr; } }
+
+    /* --- Groups Grid --- */
+    .groups-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin-bottom: 0.8rem;
+    }
+    @media (max-width: 700px) { .groups-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .group-card {
+      background: #1a1a1a;
       border: 2px solid #333;
       border-radius: 10px;
+      padding: 0.6rem;
       cursor: pointer;
-      transition: transform 0.1s, border-color 0.1s;
-    }
-    .preset-btn:hover { transform: scale(1.1); border-color: #fff; }
-    .preset-btn.active { border-color: #fff; box-shadow: 0 0 10px rgba(255,255,255,0.3); }
-
-    /* --- Effects --- */
-    .effects-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-bottom: 1rem;
-    }
-    .effect-btn {
-      padding: 0.5rem 1rem;
-      border: 1px solid #333;
-      border-radius: 8px;
-      background: #1a1a1a;
-      color: #ccc;
-      cursor: pointer;
-      font-size: 0.85rem;
-      transition: all 0.15s;
-    }
-    .effect-btn:hover { border-color: #666; }
-    .effect-btn.active {
-      background: #764ba2;
-      border-color: #764ba2;
-      color: #fff;
-    }
-
-    /* --- Duration slider --- */
-    .duration-row {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      margin-bottom: 1rem;
-    }
-    .duration-row label { font-size: 0.85rem; color: #aaa; white-space: nowrap; }
-    .duration-row input[type="range"] { flex: 1; accent-color: #764ba2; }
-    .duration-row .val { font-family: monospace; color: #4ecdc4; min-width: 50px; }
-
-    /* --- Action Buttons --- */
-    .actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-    .btn {
-      padding: 1rem;
-      border: none;
-      border-radius: 10px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.1s, opacity 0.1s;
-    }
-    .btn:active { transform: scale(0.97); }
-    .btn-go {
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      color: #fff;
-      grid-column: 1 / -1;
-      font-size: 1.3rem;
-      padding: 1.2rem;
-    }
-    .btn-blackout {
-      background: #1a1a1a;
-      color: #e74c3c;
-      border: 2px solid #e74c3c;
-    }
-    .btn-white {
-      background: #fff;
-      color: #000;
-    }
-
-    /* --- Zone selector --- */
-    .zone-target {
-      margin-bottom: 1rem;
-    }
-    .zone-target select {
-      width: 100%;
-      padding: 0.7rem;
-      border-radius: 8px;
-      border: 1px solid #333;
-      background: #0d0d0d;
-      color: #fff;
-      font-size: 0.9rem;
-    }
-
-    /* --- Zones sidebar --- */
-    .zone-list { list-style: none; }
-    .zone-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.6rem 0;
-      border-bottom: 1px solid #1a1a1a;
-      font-size: 0.9rem;
-    }
-    .zone-item:last-child { border: none; }
-    .zone-count {
-      background: #1a1a1a;
-      padding: 2px 10px;
-      border-radius: 12px;
-      font-size: 0.8rem;
-      color: #4ecdc4;
-      font-weight: 600;
-    }
-
-    /* --- Sequence Builder --- */
-    .seq-steps { margin-bottom: 0.5rem; }
-    .seq-step {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 0;
-      border-bottom: 1px solid #1a1a1a;
-      font-size: 0.8rem;
-    }
-    .seq-step .swatch {
-      width: 24px; height: 24px;
-      border-radius: 6px;
-      border: 1px solid #333;
-      flex-shrink: 0;
-    }
-    .seq-step input {
-      width: 60px;
-      padding: 4px;
-      border-radius: 4px;
-      border: 1px solid #333;
-      background: #0d0d0d;
-      color: #fff;
-      font-size: 0.8rem;
+      transition: border-color 0.15s, transform 0.1s;
       text-align: center;
+      position: relative;
     }
-    .seq-step .remove-step {
-      background: none;
-      border: none;
-      color: #e74c3c;
-      cursor: pointer;
-      font-size: 1rem;
+    .group-card:hover { border-color: #666; }
+    .group-card.selected { border-color: #764ba2; box-shadow: 0 0 12px rgba(118,75,162,0.4); }
+    .group-card .g-num {
+      font-size: 0.7rem; color: #888;
+      text-transform: uppercase; letter-spacing: 0.05em;
     }
-    .seq-actions {
+    .group-card .g-preview {
+      width: 100%; height: 40px;
+      border-radius: 6px;
+      margin: 6px 0;
+      border: 1px solid #333;
+      background: #000;
+    }
+    .group-card .g-count {
+      font-size: 0.7rem; color: #4ecdc4;
+    }
+    .group-card .g-color-label {
+      font-family: monospace;
+      font-size: 0.65rem;
+      color: #666;
+    }
+
+    /* --- Selection bar --- */
+    .selection-bar {
       display: flex;
-      gap: 8px;
+      gap: 6px;
+      margin-bottom: 0.8rem;
+      flex-wrap: wrap;
     }
-    .btn-sm {
+    .sel-btn {
       padding: 0.4rem 0.8rem;
       border: 1px solid #333;
       border-radius: 6px;
       background: #1a1a1a;
       color: #ccc;
       cursor: pointer;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
+    }
+    .sel-btn:hover { border-color: #666; }
+    .sel-btn.active { background: #764ba2; border-color: #764ba2; color: #fff; }
+
+    /* --- Color Picker --- */
+    .color-picker-row {
+      display: flex; align-items: center; gap: 1rem; margin-bottom: 0.8rem;
+    }
+    #colorPicker {
+      width: 50px; height: 50px; border: none; border-radius: 10px;
+      cursor: pointer; background: none; padding: 0;
+    }
+    #colorPicker::-webkit-color-swatch-wrapper { padding: 0; }
+    #colorPicker::-webkit-color-swatch { border: 2px solid #333; border-radius: 8px; }
+    #colorHex { font-family: monospace; font-size: 1.3rem; font-weight: 700; color: #fff; }
+
+    /* --- Presets --- */
+    .presets {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+      gap: 6px;
+      margin-bottom: 0.8rem;
+    }
+    .preset-btn {
+      width: 100%; aspect-ratio: 1;
+      border: 2px solid #333; border-radius: 8px;
+      cursor: pointer; transition: transform 0.1s, border-color 0.1s;
+    }
+    .preset-btn:hover { transform: scale(1.1); border-color: #fff; }
+    .preset-btn.active { border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.3); }
+
+    /* --- Effects --- */
+    .effects-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 0.8rem; }
+    .effect-btn {
+      padding: 0.4rem 0.8rem; border: 1px solid #333; border-radius: 8px;
+      background: #1a1a1a; color: #ccc; cursor: pointer; font-size: 0.8rem;
+    }
+    .effect-btn:hover { border-color: #666; }
+    .effect-btn.active { background: #764ba2; border-color: #764ba2; color: #fff; }
+
+    /* --- Duration --- */
+    .duration-row {
+      display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem;
+    }
+    .duration-row label { font-size: 0.8rem; color: #aaa; white-space: nowrap; }
+    .duration-row input[type="range"] { flex: 1; accent-color: #764ba2; }
+    .duration-row .val { font-family: monospace; color: #4ecdc4; min-width: 45px; font-size: 0.85rem; }
+
+    /* --- Actions --- */
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .btn {
+      padding: 0.8rem; border: none; border-radius: 10px;
+      font-size: 1rem; font-weight: 600; cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-go {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff; grid-column: 1 / -1; font-size: 1.2rem; padding: 1rem;
+    }
+    .btn-blackout { background: #1a1a1a; color: #e74c3c; border: 2px solid #e74c3c; }
+    .btn-white { background: #fff; color: #000; }
+
+    /* --- ArtNet status --- */
+    .artnet-status {
+      font-size: 0.75rem; color: #666;
+      padding: 0.5rem; text-align: center;
+    }
+    .artnet-status.active { color: #2ecc71; }
+
+    /* --- Sequence --- */
+    .seq-steps { margin-bottom: 0.5rem; max-height: 200px; overflow-y: auto; }
+    .seq-step {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 0; border-bottom: 1px solid #1a1a1a; font-size: 0.75rem;
+    }
+    .seq-step .swatch {
+      width: 20px; height: 20px; border-radius: 4px;
+      border: 1px solid #333; flex-shrink: 0;
+    }
+    .seq-step input {
+      width: 50px; padding: 3px; border-radius: 4px;
+      border: 1px solid #333; background: #0d0d0d; color: #fff;
+      font-size: 0.75rem; text-align: center;
+    }
+    .seq-step .remove-step {
+      background: none; border: none; color: #e74c3c;
+      cursor: pointer; font-size: 0.9rem;
+    }
+    .seq-actions { display: flex; gap: 6px; }
+    .btn-sm {
+      padding: 0.3rem 0.6rem; border: 1px solid #333;
+      border-radius: 6px; background: #1a1a1a; color: #ccc;
+      cursor: pointer; font-size: 0.75rem;
     }
     .btn-sm:hover { border-color: #666; }
     .btn-sm.primary { background: #764ba2; border-color: #764ba2; color: #fff; }
 
-    /* --- Preview --- */
-    .preview-box {
-      width: 100%;
-      height: 80px;
-      border-radius: 10px;
-      border: 1px solid #333;
-      margin-bottom: 1rem;
-      transition: background-color 0.3s;
-      background: #000;
-    }
+    /* --- DMX Info sidebar --- */
+    .dmx-map { font-size: 0.7rem; color: #666; font-family: monospace; }
+    .dmx-map table { width: 100%; border-collapse: collapse; }
+    .dmx-map td { padding: 2px 6px; border-bottom: 1px solid #1a1a1a; }
+    .dmx-map td:first-child { color: #4ecdc4; }
   </style>
 </head>
 <body>
@@ -349,19 +263,26 @@
   <!-- Main -->
   <div class="main">
     <div class="left-col">
-      <!-- Color Picker -->
+      <!-- 10 Groups Visual -->
       <div class="panel">
-        <div class="panel-title">Colore</div>
+        <div class="panel-title">Gruppi (10 fixture) — clicca per selezionare</div>
+        <div class="selection-bar">
+          <button class="sel-btn active" data-sel="all">TUTTI</button>
+          <button class="sel-btn" data-sel="none">Nessuno</button>
+          <button class="sel-btn" data-sel="odd">Dispari</button>
+          <button class="sel-btn" data-sel="even">Pari</button>
+        </div>
+        <div class="groups-grid" id="groupsGrid"></div>
+      </div>
+
+      <!-- Color + Effect + GO -->
+      <div class="panel">
+        <div class="panel-title">Colore & Effetto</div>
         <div class="color-picker-row">
           <input type="color" id="colorPicker" value="#ff0000">
           <span id="colorHex">#FF0000</span>
         </div>
         <div class="presets" id="presets"></div>
-      </div>
-
-      <!-- Effects -->
-      <div class="panel">
-        <div class="panel-title">Effetto</div>
         <div class="effects-row" id="effectsRow"></div>
         <div class="duration-row">
           <label>Durata</label>
@@ -370,46 +291,40 @@
         </div>
       </div>
 
-      <!-- Zone Target -->
+      <!-- Actions -->
       <div class="panel">
-        <div class="panel-title">Destinazione</div>
-        <div class="zone-target">
-          <select id="zoneTarget">
-            <option value="">Tutti i telefoni</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Preview + Actions -->
-      <div class="panel">
-        <div class="panel-title">Anteprima</div>
-        <div class="preview-box" id="previewBox"></div>
         <div class="actions">
-          <button class="btn btn-go" id="goBtn">&#9654; GO</button>
+          <button class="btn btn-go" id="goBtn">&#9654; GO (ai selezionati)</button>
           <button class="btn btn-blackout" id="blackoutBtn">BLACKOUT</button>
           <button class="btn btn-white" id="whiteBtn">BIANCO</button>
         </div>
       </div>
 
-      <!-- Sequence Builder -->
+      <!-- Sequence -->
       <div class="panel">
         <div class="panel-title">Sequenza</div>
         <div class="seq-steps" id="seqSteps"></div>
         <div class="seq-actions">
-          <button class="btn-sm" id="addStepBtn">+ Aggiungi Step</button>
-          <button class="btn-sm primary" id="playSeqBtn">&#9654; Play Sequenza</button>
+          <button class="btn-sm" id="addStepBtn">+ Step</button>
+          <button class="btn-sm primary" id="playSeqBtn">&#9654; Play</button>
           <button class="btn-sm" id="clearSeqBtn">Cancella</button>
         </div>
       </div>
     </div>
 
-    <!-- Right sidebar: zones -->
+    <!-- Right sidebar -->
     <div class="right-col">
+      <!-- Group details -->
       <div class="panel">
-        <div class="panel-title">Zone Connesse</div>
-        <ul class="zone-list" id="zoneList">
-          <li class="zone-item"><span style="color:#666">Nessuna zona attiva</span></li>
-        </ul>
+        <div class="panel-title">Telefoni per gruppo</div>
+        <div id="groupList"></div>
+      </div>
+
+      <!-- DMX Map -->
+      <div class="panel">
+        <div class="panel-title">Mappa DMX (ArtNet Bridge)</div>
+        <div class="dmx-map" id="dmxMap"></div>
+        <div class="artnet-status" id="artnetStatus">ArtNet Bridge: non collegato</div>
       </div>
     </div>
   </div>

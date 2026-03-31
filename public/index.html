@@ -26,10 +26,7 @@
       max-width: 400px;
       width: 100%;
     }
-    .logo {
-      font-size: 3rem;
-      margin-bottom: 0.5rem;
-    }
+    .logo { font-size: 3rem; margin-bottom: 0.5rem; }
     h1 {
       font-size: 1.8rem;
       font-weight: 700;
@@ -44,27 +41,6 @@
       font-size: 0.9rem;
       margin-bottom: 2rem;
     }
-    .zone-select {
-      margin-bottom: 1.5rem;
-    }
-    .zone-select label {
-      display: block;
-      font-size: 0.85rem;
-      color: #aaa;
-      margin-bottom: 0.5rem;
-    }
-    .zone-select select {
-      width: 100%;
-      padding: 0.8rem 1rem;
-      border-radius: 12px;
-      border: 1px solid #333;
-      background: #1a1a1a;
-      color: #fff;
-      font-size: 1rem;
-      appearance: none;
-      -webkit-appearance: none;
-      cursor: pointer;
-    }
     .consent-box {
       background: #1a1a1a;
       border-radius: 12px;
@@ -75,9 +51,7 @@
       color: #aaa;
       line-height: 1.5;
     }
-    .consent-box strong {
-      color: #fff;
-    }
+    .consent-box strong { color: #fff; }
     .btn-enter {
       width: 100%;
       padding: 1rem;
@@ -90,14 +64,8 @@
       cursor: pointer;
       transition: transform 0.15s, opacity 0.15s;
     }
-    .btn-enter:active {
-      transform: scale(0.97);
-      opacity: 0.9;
-    }
-    .btn-enter:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
+    .btn-enter:active { transform: scale(0.97); opacity: 0.9; }
+    .btn-enter:disabled { opacity: 0.4; cursor: not-allowed; }
     .check-row {
       display: flex;
       align-items: center;
@@ -105,8 +73,7 @@
       margin-top: 0.8rem;
     }
     .check-row input[type="checkbox"] {
-      width: 20px;
-      height: 20px;
+      width: 20px; height: 20px;
       accent-color: #764ba2;
     }
     .check-row label {
@@ -122,24 +89,10 @@
     <h1>CrowdLight</h1>
     <p class="subtitle">Diventa parte dello show!</p>
 
-    <div class="zone-select">
-      <label for="zone">Seleziona il tuo settore (opzionale)</label>
-      <select id="zone">
-        <option value="">-- Nessun settore --</option>
-        <option value="Parterre">Parterre</option>
-        <option value="Tribuna A">Tribuna A</option>
-        <option value="Tribuna B">Tribuna B</option>
-        <option value="Tribuna C">Tribuna C</option>
-        <option value="Tribuna D">Tribuna D</option>
-        <option value="Galleria">Galleria</option>
-        <option value="VIP">VIP</option>
-      </select>
-    </div>
-
     <div class="consent-box">
       <strong>Come funziona:</strong><br>
       Il tuo schermo diventerà una luce colorata controllata dalla regia dello show.
-      Lo schermo resterà acceso e a tutto schermo per creare un effetto visivo incredibile con tutto il pubblico.
+      Verrai assegnato automaticamente a un gruppo per creare effetti visivi incredibili con tutto il pubblico!
       <div class="check-row">
         <input type="checkbox" id="consent">
         <label for="consent">Accetto di partecipare allo show di luci</label>
@@ -152,16 +105,13 @@
   <script>
     const consent = document.getElementById('consent');
     const enterBtn = document.getElementById('enterBtn');
-    const zone = document.getElementById('zone');
 
     consent.addEventListener('change', () => {
       enterBtn.disabled = !consent.checked;
     });
 
     enterBtn.addEventListener('click', () => {
-      const params = new URLSearchParams();
-      if (zone.value) params.set('zone', zone.value);
-      window.location.href = '/client.html' + (params.toString() ? '?' + params : '');
+      window.location.href = '/client.html';
     });
   </script>
 </body>

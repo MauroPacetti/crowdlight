@@ -13,25 +13,44 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 const CONTROLLER_PASSWORD = process.env.CONTROLLER_PASS || 'crowdlight2024';
+const NUM_GROUPS = 10;
 
 // Serve static files
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- State ---
-const zones = new Map(); // zoneName -> Set of socket ids
-const clients = new Map(); // socket id -> { zone, connectedAt }
-let currentState = { c: '#000000', e: 'solid', d: 500 }; // color, effect, duration
-const zoneStates = new Map(); // zoneName -> { c, e, d }
+const groups = new Map(); // groupId (1-10) -> Set of socket ids
+const clients = new Map(); // socket id -> { group, connectedAt }
+// Per-group color state
+const groupStates = new Map(); // groupId -> { c, e, d }
 let connectedCount = 0;
+
+// Initialize groups
+for (let i = 1; i <= NUM_GROUPS; i++) {
+  groups.set(i, new Set());
+  groupStates.set(i, { c: '#000000', e: 'solid', d: 500 });
+}
+
+// --- Random group assignment (balanced) ---
+function assignGroup() {
+  // Find group(s) with fewest members
+  let minSize = Infinity;
+  for (const [, members] of groups) {
+    if (members.size < minSize) minSize = members.size;
+  }
+  // Collect groups with min size
+  const candidates = [];
+  for (const [id, members] of groups) {
+    if (members.size === minSize) candidates.push(id);
+  }
+  // Pick random among smallest groups
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
 
 // --- API endpoint for stats ---
 app.get('/api/stats', (req, res) => {
-  const zoneStats = {};
-  for (const [name, members] of zones) {
-    zoneStats[name] = members.size;
-  }
-  res.json({ total: connectedCount, zones: zoneStats });
+  res.json(getStats());
 });
 
 // --- REST API for external control (ArtNet bridge, etc.) ---
@@ -46,16 +65,42 @@ app.post('/api/color', (req, res) => {
     e: ['solid', 'fade', 'pulse', 'strobe'].includes(data.e) ? data.e : 'solid',
     d: Math.min(Math.max(Number(data.d) || 500, 50), 5000),
   };
+  const groupId = Number(data.group);
 
-  if (data.zone) {
-    const zoneName = String(data.zone).trim().substring(0, 50);
-    zoneStates.set(zoneName, state);
-    audience.to(`zone:${zoneName}`).volatile.emit('color', state);
+  if (groupId >= 1 && groupId <= NUM_GROUPS) {
+    groupStates.set(groupId, state);
+    audience.to(`group:${groupId}`).volatile.emit('color', state);
   } else {
-    currentState = state;
+    // All groups
+    for (let i = 1; i <= NUM_GROUPS; i++) {
+      groupStates.set(i, state);
+    }
     audience.volatile.emit('color', state);
   }
   res.json({ ok: true, state });
+});
+
+// Batch update: multiple groups at once (used by ArtNet bridge)
+app.post('/api/color-batch', (req, res) => {
+  const auth = req.headers['x-password'] || req.body.password;
+  if (auth !== CONTROLLER_PASSWORD) {
+    return res.status(401).json({ error: 'Password non valida' });
+  }
+  const updates = req.body.groups; // array of { group, c, e, d }
+  if (!Array.isArray(updates)) return res.status(400).json({ error: 'Invalid' });
+
+  for (const data of updates) {
+    const groupId = Number(data.group);
+    if (groupId < 1 || groupId > NUM_GROUPS) continue;
+    const state = {
+      c: String(data.c || '#000000').substring(0, 7),
+      e: ['solid', 'fade', 'pulse', 'strobe'].includes(data.e) ? data.e : 'solid',
+      d: Math.min(Math.max(Number(data.d) || 500, 50), 5000),
+    };
+    groupStates.set(groupId, state);
+    audience.to(`group:${groupId}`).volatile.emit('color', state);
+  }
+  res.json({ ok: true });
 });
 
 app.post('/api/blackout', (req, res) => {
@@ -64,8 +109,9 @@ app.post('/api/blackout', (req, res) => {
     return res.status(401).json({ error: 'Password non valida' });
   }
   const state = { c: '#000000', e: 'solid', d: 0 };
-  currentState = state;
-  zoneStates.clear();
+  for (let i = 1; i <= NUM_GROUPS; i++) {
+    groupStates.set(i, state);
+  }
   audience.volatile.emit('color', state);
   res.json({ ok: true });
 });
@@ -75,53 +121,27 @@ const audience = io.of('/audience');
 
 audience.on('connection', (socket) => {
   connectedCount++;
-  clients.set(socket.id, { zone: null, connectedAt: Date.now() });
 
-  // Send current state immediately
-  socket.emit('color', currentState);
+  // Assign random group (balanced)
+  const groupId = assignGroup();
+  clients.set(socket.id, { group: groupId, connectedAt: Date.now() });
+  groups.get(groupId).add(socket.id);
+  socket.join(`group:${groupId}`);
+
+  // Send group assignment and current state
+  socket.emit('assigned', { group: groupId, total: NUM_GROUPS });
+  const currentGroupState = groupStates.get(groupId);
+  if (currentGroupState) socket.emit('color', currentGroupState);
 
   // Notify controllers
   io.of('/controller').emit('stats', getStats());
 
-  // Join a zone
-  socket.on('join-zone', (zoneName) => {
-    if (!zoneName || typeof zoneName !== 'string') return;
-    const sanitized = zoneName.trim().substring(0, 50);
-    const client = clients.get(socket.id);
-    if (!client) return;
-
-    // Leave old zone
-    if (client.zone) {
-      const oldZone = zones.get(client.zone);
-      if (oldZone) {
-        oldZone.delete(socket.id);
-        if (oldZone.size === 0) zones.delete(client.zone);
-      }
-      socket.leave(`zone:${client.zone}`);
-    }
-
-    // Join new zone
-    client.zone = sanitized;
-    if (!zones.has(sanitized)) zones.set(sanitized, new Set());
-    zones.get(sanitized).add(socket.id);
-    socket.join(`zone:${sanitized}`);
-
-    // Send zone-specific state if exists
-    const zoneState = zoneStates.get(sanitized);
-    if (zoneState) socket.emit('color', zoneState);
-
-    io.of('/controller').emit('stats', getStats());
-  });
-
   socket.on('disconnect', () => {
     connectedCount--;
     const client = clients.get(socket.id);
-    if (client && client.zone) {
-      const zone = zones.get(client.zone);
-      if (zone) {
-        zone.delete(socket.id);
-        if (zone.size === 0) zones.delete(client.zone);
-      }
+    if (client) {
+      const group = groups.get(client.group);
+      if (group) group.delete(socket.id);
     }
     clients.delete(socket.id);
     io.of('/controller').emit('stats', getStats());
@@ -143,56 +163,75 @@ controller.use((socket, next) => {
 controller.on('connection', (socket) => {
   // Send current state and stats
   socket.emit('stats', getStats());
-  socket.emit('current-state', { global: currentState, zones: Object.fromEntries(zoneStates) });
+  const allStates = {};
+  for (let i = 1; i <= NUM_GROUPS; i++) {
+    allStates[i] = groupStates.get(i);
+  }
+  socket.emit('current-state', { groups: allStates, numGroups: NUM_GROUPS });
 
-  // Broadcast color to ALL audience
+  // Color to ALL groups
   socket.on('color-all', (data) => {
     if (!data || !data.c) return;
-    const state = {
-      c: String(data.c).substring(0, 7),
-      e: ['solid', 'fade', 'pulse', 'strobe'].includes(data.e) ? data.e : 'solid',
-      d: Math.min(Math.max(Number(data.d) || 500, 50), 5000),
-    };
-    currentState = state;
+    const state = sanitizeState(data);
+    for (let i = 1; i <= NUM_GROUPS; i++) {
+      groupStates.set(i, state);
+    }
     audience.volatile.emit('color', state);
+    controller.emit('group-update', { group: 'all', state });
   });
 
-  // Broadcast color to a specific ZONE
-  socket.on('color-zone', (data) => {
-    if (!data || !data.c || !data.zone) return;
-    const state = {
-      c: String(data.c).substring(0, 7),
-      e: ['solid', 'fade', 'pulse', 'strobe'].includes(data.e) ? data.e : 'solid',
-      d: Math.min(Math.max(Number(data.d) || 500, 50), 5000),
-    };
-    const zoneName = String(data.zone).trim().substring(0, 50);
-    zoneStates.set(zoneName, state);
-    audience.to(`zone:${zoneName}`).volatile.emit('color', state);
+  // Color to a specific group
+  socket.on('color-group', (data) => {
+    if (!data || !data.c || !data.group) return;
+    const groupId = Number(data.group);
+    if (groupId < 1 || groupId > NUM_GROUPS) return;
+    const state = sanitizeState(data);
+    groupStates.set(groupId, state);
+    audience.to(`group:${groupId}`).volatile.emit('color', state);
+    controller.emit('group-update', { group: groupId, state });
   });
 
-  // Blackout - all phones to black
+  // Batch update from controller
+  socket.on('color-batch', (data) => {
+    if (!Array.isArray(data.groups)) return;
+    for (const item of data.groups) {
+      const groupId = Number(item.group);
+      if (groupId < 1 || groupId > NUM_GROUPS) continue;
+      const state = sanitizeState(item);
+      groupStates.set(groupId, state);
+      audience.to(`group:${groupId}`).volatile.emit('color', state);
+    }
+    // Send full state update to all controllers
+    const allStates = {};
+    for (let i = 1; i <= NUM_GROUPS; i++) {
+      allStates[i] = groupStates.get(i);
+    }
+    controller.emit('state-sync', allStates);
+  });
+
+  // Blackout
   socket.on('blackout', () => {
     const state = { c: '#000000', e: 'solid', d: 0 };
-    currentState = state;
-    zoneStates.clear();
+    for (let i = 1; i <= NUM_GROUPS; i++) {
+      groupStates.set(i, state);
+    }
     audience.volatile.emit('color', state);
+    controller.emit('group-update', { group: 'all', state });
   });
 
-  // Sequence - series of timed color changes
+  // Sequence
   socket.on('sequence', (data) => {
     if (!Array.isArray(data.steps)) return;
     let delay = 0;
     for (const step of data.steps.slice(0, 100)) {
-      const state = {
-        c: String(step.c || '#000000').substring(0, 7),
-        e: ['solid', 'fade', 'pulse', 'strobe'].includes(step.e) ? step.e : 'solid',
-        d: Math.min(Math.max(Number(step.d) || 500, 50), 5000),
-      };
+      const state = sanitizeState(step);
+      const groupId = Number(step.group) || 0;
       setTimeout(() => {
-        currentState = state;
-        if (step.zone) {
-          audience.to(`zone:${step.zone}`).volatile.emit('color', state);
+        if (groupId >= 1 && groupId <= NUM_GROUPS) {
+          groupStates.set(groupId, state);
+          audience.to(`group:${groupId}`).volatile.emit('color', state);
         } else {
+          for (let i = 1; i <= NUM_GROUPS; i++) groupStates.set(i, state);
           audience.volatile.emit('color', state);
         }
       }, delay);
@@ -201,16 +240,25 @@ controller.on('connection', (socket) => {
   });
 });
 
+function sanitizeState(data) {
+  return {
+    c: String(data.c || '#000000').substring(0, 7),
+    e: ['solid', 'fade', 'pulse', 'strobe'].includes(data.e) ? data.e : 'solid',
+    d: Math.min(Math.max(Number(data.d) || 500, 50), 5000),
+  };
+}
+
 function getStats() {
-  const zoneStats = {};
-  for (const [name, members] of zones) {
-    zoneStats[name] = members.size;
+  const groupStats = {};
+  for (let i = 1; i <= NUM_GROUPS; i++) {
+    groupStats[i] = groups.get(i).size;
   }
-  return { total: connectedCount, zones: zoneStats };
+  return { total: connectedCount, groups: groupStats, numGroups: NUM_GROUPS };
 }
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`CrowdLight server running on http://localhost:${PORT}`);
   console.log(`Controller: http://localhost:${PORT}/controller.html`);
+  console.log(`Groups: ${NUM_GROUPS}`);
   console.log(`Controller password: ${CONTROLLER_PASSWORD}`);
 });
