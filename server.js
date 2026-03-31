@@ -15,6 +15,7 @@ const PORT = process.env.PORT || 3000;
 const CONTROLLER_PASSWORD = process.env.CONTROLLER_PASS || 'crowdlight2024';
 
 // Serve static files
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- State ---
@@ -31,6 +32,42 @@ app.get('/api/stats', (req, res) => {
     zoneStats[name] = members.size;
   }
   res.json({ total: connectedCount, zones: zoneStats });
+});
+
+// --- REST API for external control (ArtNet bridge, etc.) ---
+app.post('/api/color', (req, res) => {
+  const auth = req.headers['x-password'] || req.body.password;
+  if (auth !== CONTROLLER_PASSWORD) {
+    return res.status(401).json({ error: 'Password non valida' });
+  }
+  const data = req.body;
+  const state = {
+    c: String(data.c || '#000000').substring(0, 7),
+    e: ['solid', 'fade', 'pulse', 'strobe'].includes(data.e) ? data.e : 'solid',
+    d: Math.min(Math.max(Number(data.d) || 500, 50), 5000),
+  };
+
+  if (data.zone) {
+    const zoneName = String(data.zone).trim().substring(0, 50);
+    zoneStates.set(zoneName, state);
+    audience.to(`zone:${zoneName}`).volatile.emit('color', state);
+  } else {
+    currentState = state;
+    audience.volatile.emit('color', state);
+  }
+  res.json({ ok: true, state });
+});
+
+app.post('/api/blackout', (req, res) => {
+  const auth = req.headers['x-password'] || req.body.password;
+  if (auth !== CONTROLLER_PASSWORD) {
+    return res.status(401).json({ error: 'Password non valida' });
+  }
+  const state = { c: '#000000', e: 'solid', d: 0 };
+  currentState = state;
+  zoneStates.clear();
+  audience.volatile.emit('color', state);
+  res.json({ ok: true });
 });
 
 // --- Audience namespace ---
