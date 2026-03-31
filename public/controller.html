@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrowdLight - Controller</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d0d0d;
+      color: #fff;
+      min-height: 100vh;
+    }
+
+    /* --- Header --- */
+    .header {
+      background: #151515;
+      border-bottom: 1px solid #222;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header h1 {
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+    .header h1 span { color: #764ba2; }
+    .stats-bar {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+    }
+    .stat {
+      text-align: center;
+    }
+    .stat-num {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #4ecdc4;
+    }
+    .stat-label {
+      font-size: 0.65rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .conn-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #e74c3c;
+      display: inline-block;
+    }
+    .conn-dot.connected { background: #2ecc71; }
+
+    /* --- Login --- */
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+    }
+    .login-overlay.hidden { display: none; }
+    .login-box {
+      background: #1a1a1a;
+      padding: 2rem;
+      border-radius: 16px;
+      text-align: center;
+      width: 320px;
+    }
+    .login-box h2 { margin-bottom: 1rem; font-size: 1.3rem; }
+    .login-box input {
+      width: 100%;
+      padding: 0.8rem;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #0d0d0d;
+      color: #fff;
+      font-size: 1rem;
+      margin-bottom: 1rem;
+    }
+    .login-box .error { color: #e74c3c; font-size: 0.8rem; margin-bottom: 0.5rem; display: none; }
+
+    /* --- Main Layout --- */
+    .main {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    @media (max-width: 900px) {
+      .main { grid-template-columns: 1fr; }
+    }
+
+    /* --- Panels --- */
+    .panel {
+      background: #151515;
+      border: 1px solid #222;
+      border-radius: 12px;
+      padding: 1.2rem;
+      margin-bottom: 1rem;
+    }
+    .panel-title {
+      font-size: 0.75rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1rem;
+    }
+
+    /* --- Color Picker --- */
+    .color-picker-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    #colorPicker {
+      width: 60px;
+      height: 60px;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      background: none;
+      padding: 0;
+    }
+    #colorPicker::-webkit-color-swatch-wrapper { padding: 0; }
+    #colorPicker::-webkit-color-swatch { border: 2px solid #333; border-radius: 10px; }
+    #colorHex {
+      font-family: monospace;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* --- Preset Colors --- */
+    .presets {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+      gap: 8px;
+      margin-bottom: 1rem;
+    }
+    .preset-btn {
+      width: 100%;
+      aspect-ratio: 1;
+      border: 2px solid #333;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 0.1s, border-color 0.1s;
+    }
+    .preset-btn:hover { transform: scale(1.1); border-color: #fff; }
+    .preset-btn.active { border-color: #fff; box-shadow: 0 0 10px rgba(255,255,255,0.3); }
+
+    /* --- Effects --- */
+    .effects-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .effect-btn {
+      padding: 0.5rem 1rem;
+      border: 1px solid #333;
+      border-radius: 8px;
+      background: #1a1a1a;
+      color: #ccc;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.15s;
+    }
+    .effect-btn:hover { border-color: #666; }
+    .effect-btn.active {
+      background: #764ba2;
+      border-color: #764ba2;
+      color: #fff;
+    }
+
+    /* --- Duration slider --- */
+    .duration-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .duration-row label { font-size: 0.85rem; color: #aaa; white-space: nowrap; }
+    .duration-row input[type="range"] { flex: 1; accent-color: #764ba2; }
+    .duration-row .val { font-family: monospace; color: #4ecdc4; min-width: 50px; }
+
+    /* --- Action Buttons --- */
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .btn {
+      padding: 1rem;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-go {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff;
+      grid-column: 1 / -1;
+      font-size: 1.3rem;
+      padding: 1.2rem;
+    }
+    .btn-blackout {
+      background: #1a1a1a;
+      color: #e74c3c;
+      border: 2px solid #e74c3c;
+    }
+    .btn-white {
+      background: #fff;
+      color: #000;
+    }
+
+    /* --- Zone selector --- */
+    .zone-target {
+      margin-bottom: 1rem;
+    }
+    .zone-target select {
+      width: 100%;
+      padding: 0.7rem;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #0d0d0d;
+      color: #fff;
+      font-size: 0.9rem;
+    }
+
+    /* --- Zones sidebar --- */
+    .zone-list { list-style: none; }
+    .zone-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid #1a1a1a;
+      font-size: 0.9rem;
+    }
+    .zone-item:last-child { border: none; }
+    .zone-count {
+      background: #1a1a1a;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      color: #4ecdc4;
+      font-weight: 600;
+    }
+
+    /* --- Sequence Builder --- */
+    .seq-steps { margin-bottom: 0.5rem; }
+    .seq-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px solid #1a1a1a;
+      font-size: 0.8rem;
+    }
+    .seq-step .swatch {
+      width: 24px; height: 24px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      flex-shrink: 0;
+    }
+    .seq-step input {
+      width: 60px;
+      padding: 4px;
+      border-radius: 4px;
+      border: 1px solid #333;
+      background: #0d0d0d;
+      color: #fff;
+      font-size: 0.8rem;
+      text-align: center;
+    }
+    .seq-step .remove-step {
+      background: none;
+      border: none;
+      color: #e74c3c;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    .seq-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-sm {
+      padding: 0.4rem 0.8rem;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: #1a1a1a;
+      color: #ccc;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .btn-sm:hover { border-color: #666; }
+    .btn-sm.primary { background: #764ba2; border-color: #764ba2; color: #fff; }
+
+    /* --- Preview --- */
+    .preview-box {
+      width: 100%;
+      height: 80px;
+      border-radius: 10px;
+      border: 1px solid #333;
+      margin-bottom: 1rem;
+      transition: background-color 0.3s;
+      background: #000;
+    }
+  </style>
+</head>
+<body>
+  <!-- Login Overlay -->
+  <div class="login-overlay" id="loginOverlay">
+    <div class="login-box">
+      <h2>&#127926; CrowdLight Controller</h2>
+      <p class="error" id="loginError">Password non valida</p>
+      <input type="password" id="loginPass" placeholder="Password controller" autofocus>
+      <button class="btn btn-go" id="loginBtn" style="width:100%">Accedi</button>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <h1>&#127926; Crowd<span>Light</span></h1>
+    <div class="stats-bar">
+      <div class="stat">
+        <div class="stat-num" id="totalCount">0</div>
+        <div class="stat-label">Connessi</div>
+      </div>
+      <div class="conn-dot" id="connDot"></div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="left-col">
+      <!-- Color Picker -->
+      <div class="panel">
+        <div class="panel-title">Colore</div>
+        <div class="color-picker-row">
+          <input type="color" id="colorPicker" value="#ff0000">
+          <span id="colorHex">#FF0000</span>
+        </div>
+        <div class="presets" id="presets"></div>
+      </div>
+
+      <!-- Effects -->
+      <div class="panel">
+        <div class="panel-title">Effetto</div>
+        <div class="effects-row" id="effectsRow"></div>
+        <div class="duration-row">
+          <label>Durata</label>
+          <input type="range" id="duration" min="50" max="3000" value="500" step="50">
+          <span class="val" id="durationVal">500ms</span>
+        </div>
+      </div>
+
+      <!-- Zone Target -->
+      <div class="panel">
+        <div class="panel-title">Destinazione</div>
+        <div class="zone-target">
+          <select id="zoneTarget">
+            <option value="">Tutti i telefoni</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Preview + Actions -->
+      <div class="panel">
+        <div class="panel-title">Anteprima</div>
+        <div class="preview-box" id="previewBox"></div>
+        <div class="actions">
+          <button class="btn btn-go" id="goBtn">&#9654; GO</button>
+          <button class="btn btn-blackout" id="blackoutBtn">BLACKOUT</button>
+          <button class="btn btn-white" id="whiteBtn">BIANCO</button>
+        </div>
+      </div>
+
+      <!-- Sequence Builder -->
+      <div class="panel">
+        <div class="panel-title">Sequenza</div>
+        <div class="seq-steps" id="seqSteps"></div>
+        <div class="seq-actions">
+          <button class="btn-sm" id="addStepBtn">+ Aggiungi Step</button>
+          <button class="btn-sm primary" id="playSeqBtn">&#9654; Play Sequenza</button>
+          <button class="btn-sm" id="clearSeqBtn">Cancella</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right sidebar: zones -->
+    <div class="right-col">
+      <div class="panel">
+        <div class="panel-title">Zone Connesse</div>
+        <ul class="zone-list" id="zoneList">
+          <li class="zone-item"><span style="color:#666">Nessuna zona attiva</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/controller.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>CrowdLight</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    body {
+      background: #000000;
+      transition: background-color 0.5s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    body.effect-solid { transition: none; }
+    body.effect-fade { transition: background-color 0.5s ease; }
+
+    @keyframes pulse-anim {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    body.effect-pulse { animation: pulse-anim var(--pulse-duration, 1s) ease-in-out infinite; }
+
+    @keyframes strobe-anim {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+    body.effect-strobe { animation: strobe-anim var(--strobe-duration, 0.1s) linear infinite; }
+
+    .status {
+      position: fixed;
+      top: env(safe-area-inset-top, 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.5);
+      color: #fff;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-family: -apple-system, sans-serif;
+      font-size: 0.75rem;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .status.visible { opacity: 1; }
+
+    .tap-hint {
+      color: rgba(255,255,255,0.3);
+      font-family: -apple-system, sans-serif;
+      font-size: 0.9rem;
+      text-align: center;
+      pointer-events: none;
+    }
+    .tap-hint.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="status" id="status">Connessione...</div>
+  <div class="tap-hint" id="tapHint">Tocca per fullscreen</div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/client.js"></script>
+</body>
+</html>
