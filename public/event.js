@@ -24,6 +24,12 @@
     }
     eventNameEl.textContent = data.event.name;
     enterBtn.style.display = '';
+    // Show event logo if available
+    if (data.event.logo) {
+      const logoEl = document.getElementById('eventLogo');
+      logoEl.src = data.event.logo;
+      logoEl.style.display = '';
+    }
     if (!data.event.is_active) {
       enterBtn.style.display = 'none';
       consentError.textContent = 'Evento non attivo';

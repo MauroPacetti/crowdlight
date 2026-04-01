@@ -27,7 +27,13 @@
     eventsList.innerHTML = data.events.map(ev => `
       <div class="event-card" data-slug="${ev.slug}">
         <div class="ev-info">
-          <h3>${escapeHtml(ev.name)}</h3>
+          <div class="ev-header">
+            ${ev.logo
+              ? `<img class="ev-logo" src="${ev.logo}" alt="Logo">`
+              : `<div class="ev-logo-placeholder" onclick="uploadLogo('${ev.slug}')">Logo</div>`
+            }
+            <h3>${escapeHtml(ev.name)}</h3>
+          </div>
           <div class="ev-meta">
             <span class="badge ${ev.is_active ? 'badge-active' : 'badge-inactive'}">${ev.is_active ? 'ATTIVO' : 'INATTIVO'}</span>
             <span>${ev.num_groups} gruppi</span>
@@ -38,6 +44,7 @@
         <div class="ev-actions">
           <a href="/event/${ev.slug}/control" class="btn-sm primary" onclick="localStorage.setItem('ctrl_token_${ev.slug}','${ev.controller_token}')">Controller</a>
           <button class="btn-sm" onclick="showQR('${ev.slug}')">QR Code</button>
+          <button class="btn-sm" onclick="uploadLogo('${ev.slug}')">Logo</button>
           <button class="btn-sm" onclick="copyLink('${ev.slug}')">Copia Link</button>
           <button class="btn-sm danger" onclick="deleteEvent('${ev.slug}')">Elimina</button>
         </div>
@@ -102,6 +109,25 @@
     div.textContent = str;
     return div.innerHTML;
   }
+
+  // --- Logo upload ---
+  window.uploadLogo = function (slug) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/webp';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) { alert('Max 2MB'); return; }
+      const reader = new FileReader();
+      reader.onload = async () => {
+        await api(`/api/events/${slug}/logo`, 'POST', { logo: reader.result });
+        loadEvents();
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  };
 
   // --- Tunnel ---
   const tunnelDot = document.getElementById('tunnelDot');

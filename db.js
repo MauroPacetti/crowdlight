@@ -35,6 +35,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_events_controller_token ON events(controller_token);
 `);
 
+// Add logo column if it doesn't exist (migration)
+try { db.exec('ALTER TABLE events ADD COLUMN logo TEXT DEFAULT NULL'); } catch (e) { /* column already exists */ }
+
 // Prepared statements
 const stmts = {
   createUser: db.prepare('INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)'),
@@ -44,8 +47,9 @@ const stmts = {
   createEvent: db.prepare('INSERT INTO events (slug, user_id, name, num_groups, max_audience, controller_token) VALUES (?, ?, ?, ?, ?, ?)'),
   getEventBySlug: db.prepare('SELECT * FROM events WHERE slug = ?'),
   getEventByToken: db.prepare('SELECT * FROM events WHERE controller_token = ?'),
-  getEventsByUser: db.prepare('SELECT id, slug, name, num_groups, max_audience, is_active, controller_token, created_at FROM events WHERE user_id = ? ORDER BY created_at DESC'),
+  getEventsByUser: db.prepare('SELECT id, slug, name, num_groups, max_audience, is_active, controller_token, logo, created_at FROM events WHERE user_id = ? ORDER BY created_at DESC'),
   updateEvent: db.prepare('UPDATE events SET name = ?, num_groups = ?, max_audience = ?, is_active = ? WHERE slug = ? AND user_id = ?'),
+  updateEventLogo: db.prepare('UPDATE events SET logo = ? WHERE slug = ? AND user_id = ?'),
   deleteEvent: db.prepare('DELETE FROM events WHERE slug = ? AND user_id = ?'),
 };
 

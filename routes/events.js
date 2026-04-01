@@ -1,5 +1,7 @@
 const { nanoid } = require('nanoid');
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
 const QRCode = require('qrcode');
 const { stmts } = require('../db');
 const { requireAuth } = require('../auth');
@@ -51,6 +53,7 @@ function setupEventRoutes(app, getEventStats) {
         name: event.name,
         num_groups: event.num_groups,
         is_active: !!event.is_active,
+        logo: event.logo || null,
         stats: getEventStats(event.slug),
       }
     });
@@ -78,6 +81,35 @@ function setupEventRoutes(app, getEventStats) {
     const result = stmts.deleteEvent.run(req.params.slug, req.user.id);
     if (result.changes === 0) return res.status(404).json({ error: 'Evento non trovato' });
     res.json({ ok: true });
+  });
+
+  // Upload event logo (base64)
+  app.post('/api/events/:slug/logo', requireAuth, (req, res) => {
+    const event = stmts.getEventBySlug.get(req.params.slug);
+    if (!event) return res.status(404).json({ error: 'Evento non trovato' });
+    if (event.user_id !== req.user.id) return res.status(403).json({ error: 'Non autorizzato' });
+
+    const { logo } = req.body; // base64 data URL
+    if (!logo) return res.status(400).json({ error: 'Logo richiesto' });
+
+    // Save as file
+    const matches = logo.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/);
+    if (!matches) return res.status(400).json({ error: 'Formato immagine non valido' });
+
+    const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+    const filename = `event-${req.params.slug}.${ext}`;
+    const filepath = path.join(__dirname, '..', 'public', 'uploads', filename);
+
+    // Ensure uploads dir exists
+    const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+    fs.writeFileSync(filepath, Buffer.from(matches[2], 'base64'));
+
+    const logoUrl = `/uploads/${filename}`;
+    stmts.updateEventLogo.run(logoUrl, req.params.slug, req.user.id);
+
+    res.json({ logo: logoUrl });
   });
 
   // QR Code

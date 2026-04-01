@@ -18,8 +18,8 @@
       z-index: 100; padding: 2rem; text-align: center;
     }
     .consent.hidden { display: none; }
-    .consent h1 { font-family: -apple-system, sans-serif; font-size: 1.8rem; font-weight: 800; color: #fff; margin-bottom: 0.3rem; }
-    .consent h1 span { color: #764ba2; }
+    .consent-logo { max-width: 250px; width: 60%; margin-bottom: 0.5rem; }
+    .event-logo { max-width: 120px; width: 40%; border-radius: 12px; margin-bottom: 0.5rem; display: none; }
     .consent .event-name { color: #4ecdc4; font-size: 1.2rem; margin-bottom: 1.5rem; font-family: -apple-system, sans-serif; }
     .consent p { color: #888; font-size: 0.85rem; line-height: 1.5; max-width: 320px; margin-bottom: 1.5rem; font-family: -apple-system, sans-serif; }
     .consent button {
@@ -48,7 +48,8 @@
 </head>
 <body>
   <div class="consent" id="consent">
-    <h1>Crowd<span>Light</span></h1>
+    <img src="/logo-symbol.jpg" alt="CrowdLight" class="consent-logo">
+    <img class="event-logo" id="eventLogo" src="">
     <div class="event-name" id="eventName">Caricamento...</div>
     <p>Il tuo telefono diventerà una luce controllata dal palco. Alza la luminosità al massimo!</p>
     <button id="enterBtn" style="display:none;">Entra nello Show</button>
