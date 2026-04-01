@@ -11,7 +11,7 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 700,
     title: 'CrowdLight',
-    icon: path.join(__dirname, 'public', 'icon.png'),
+    icon: path.join(__dirname, 'public', 'icon.ico'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
