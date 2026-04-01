@@ -219,35 +219,58 @@ controller.on('connection', (socket) => {
     controller.emit('group-update', { group: 'all', state });
   });
 
-  // Sequence
-  socket.on('sequence', (data) => {
-    if (!Array.isArray(data.steps)) return;
-    let delay = 0;
-    for (const step of data.steps.slice(0, 100)) {
-      const state = sanitizeState(step);
-      const targetGroups = Array.isArray(step.groups) ? step.groups : [Number(step.group) || 0];
-      setTimeout(() => {
-        const isAll = targetGroups.includes(0);
-        if (isAll) {
-          for (let i = 1; i <= NUM_GROUPS; i++) groupStates.set(i, state);
-          audience.volatile.emit('color', state);
-          controller.emit('group-update', { group: 'all', state });
-        } else {
-          for (const gId of targetGroups) {
-            const groupId = Number(gId);
-            if (groupId >= 1 && groupId <= NUM_GROUPS) {
-              groupStates.set(groupId, state);
-              audience.to(`group:${groupId}`).volatile.emit('color', state);
-            }
-          }
-          // Sync controller state
-          const allStates = {};
-          for (let i = 1; i <= NUM_GROUPS; i++) allStates[i] = groupStates.get(i);
-          controller.emit('state-sync', allStates);
+  // Sequence (with loop support)
+  let seqTimers = [];
+
+  function clearSeqTimers() {
+    for (const t of seqTimers) clearTimeout(t);
+    seqTimers = [];
+  }
+
+  function executeStep(step) {
+    const state = sanitizeState(step);
+    const targetGroups = Array.isArray(step.groups) ? step.groups : [Number(step.group) || 0];
+    const isAll = targetGroups.includes(0);
+    if (isAll) {
+      for (let i = 1; i <= NUM_GROUPS; i++) groupStates.set(i, state);
+      audience.volatile.emit('color', state);
+      controller.emit('group-update', { group: 'all', state });
+    } else {
+      for (const gId of targetGroups) {
+        const groupId = Number(gId);
+        if (groupId >= 1 && groupId <= NUM_GROUPS) {
+          groupStates.set(groupId, state);
+          audience.to(`group:${groupId}`).volatile.emit('color', state);
         }
-      }, delay);
+      }
+      const allStates = {};
+      for (let i = 1; i <= NUM_GROUPS; i++) allStates[i] = groupStates.get(i);
+      controller.emit('state-sync', allStates);
+    }
+  }
+
+  function playSequence(steps, loop) {
+    clearSeqTimers();
+    let delay = 0;
+    const totalDuration = steps.reduce((sum, s) => sum + (Number(s.wait) || 1000), 0);
+    for (const step of steps.slice(0, 100)) {
+      const t = setTimeout(() => executeStep(step), delay);
+      seqTimers.push(t);
       delay += Number(step.wait) || 1000;
     }
+    if (loop) {
+      const t = setTimeout(() => playSequence(steps, true), totalDuration);
+      seqTimers.push(t);
+    }
+  }
+
+  socket.on('sequence', (data) => {
+    if (!Array.isArray(data.steps)) return;
+    playSequence(data.steps, !!data.loop);
+  });
+
+  socket.on('stop-sequence', () => {
+    clearSeqTimers();
   });
 });
 

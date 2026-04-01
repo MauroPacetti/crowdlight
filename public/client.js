@@ -52,11 +52,11 @@
     transports: ['websocket', 'polling'],
   });
 
-  function showStatus(msg, duration) {
+  function showStatus(msg, dur) {
     status.textContent = msg;
     status.classList.add('visible');
-    if (duration) {
-      setTimeout(() => status.classList.remove('visible'), duration);
+    if (dur) {
+      setTimeout(() => status.classList.remove('visible'), dur);
     }
   }
 
@@ -79,14 +79,52 @@
     if (groupBadge) {
       groupBadge.textContent = 'G' + data.group;
       groupBadge.classList.add('visible');
-      // Hide after 5 seconds
       setTimeout(() => groupBadge.classList.remove('visible'), 5000);
     }
   });
 
-  // --- Color handling ---
-  let currentEffect = '';
+  // --- Effect engine (pure JavaScript, no CSS animations) ---
+  let effectTimer = null;
+  let currentColor = '#000000';
 
+  function stopEffect() {
+    if (effectTimer) {
+      clearInterval(effectTimer);
+      effectTimer = null;
+    }
+    body.style.opacity = '1';
+  }
+
+  function applyColor(color) {
+    body.style.backgroundColor = color;
+  }
+
+  function startStrobe(color, duration) {
+    applyColor(color);
+    const blinkTime = Math.max(30, duration / 5);
+    let on = true;
+    effectTimer = setInterval(() => {
+      on = !on;
+      body.style.backgroundColor = on ? color : '#000000';
+    }, blinkTime);
+  }
+
+  function startPulse(color, duration) {
+    applyColor(color);
+    const stepTime = 20; // 20ms per frame (~50fps)
+    const totalSteps = Math.max(2, Math.round(duration / stepTime));
+    let step = 0;
+    let goingDown = true;
+    effectTimer = setInterval(() => {
+      const progress = step / totalSteps;
+      // Sine wave for smooth pulse: opacity goes 1 -> 0.15 -> 1
+      const opacity = 0.15 + 0.85 * (0.5 + 0.5 * Math.cos(progress * 2 * Math.PI));
+      body.style.opacity = opacity.toFixed(3);
+      step = (step + 1) % totalSteps;
+    }, stepTime);
+  }
+
+  // --- Color handling ---
   socket.on('color', (data) => {
     if (!data || !data.c) return;
 
@@ -94,51 +132,32 @@
     const effect = data.e || 'solid';
     const duration = data.d || 500;
 
-    // Remove old effect classes and reset inline styles
-    body.classList.remove('effect-solid', 'effect-fade', 'effect-pulse', 'effect-strobe');
-    body.style.removeProperty('animation');
-    body.style.removeProperty('transition');
-    void body.offsetHeight; // Force reflow to reset animations
+    // Stop any running effect
+    stopEffect();
 
-    // Set CSS custom properties for animation durations
-    body.style.setProperty('--pulse-duration', duration + 'ms');
-    body.style.setProperty('--strobe-duration', Math.max(50, duration / 5) + 'ms');
+    // Reset transition
+    body.style.transition = 'none';
 
-    // Apply effect
     switch (effect) {
       case 'solid':
-        body.style.removeProperty('animation');
-        body.style.removeProperty('transition');
-        body.classList.add('effect-solid');
-        body.style.backgroundColor = color;
+        applyColor(color);
         break;
       case 'fade':
-        body.style.removeProperty('animation');
         body.style.transition = 'background-color ' + duration + 'ms ease';
-        body.classList.add('effect-fade');
         void body.offsetHeight;
-        body.style.backgroundColor = color;
+        applyColor(color);
         break;
       case 'pulse':
-        body.style.removeProperty('transition');
-        body.style.backgroundColor = color;
-        void body.offsetHeight;
-        body.classList.add('effect-pulse');
+        startPulse(color, duration);
         break;
       case 'strobe':
-        body.style.removeProperty('transition');
-        body.style.backgroundColor = color;
-        void body.offsetHeight;
-        body.classList.add('effect-strobe');
+        startStrobe(color, duration);
         break;
       default:
-        body.style.removeProperty('animation');
-        body.style.removeProperty('transition');
-        body.classList.add('effect-solid');
-        body.style.backgroundColor = color;
+        applyColor(color);
     }
 
-    currentEffect = effect;
+    currentColor = color;
 
     // Update theme-color meta
     const meta = document.querySelector('meta[name="theme-color"]');

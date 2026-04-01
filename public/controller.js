@@ -44,6 +44,8 @@
   const seqSteps = document.getElementById('seqSteps');
   const addStepBtn = document.getElementById('addStepBtn');
   const playSeqBtn = document.getElementById('playSeqBtn');
+  const loopSeqBtn = document.getElementById('loopSeqBtn');
+  const stopSeqBtn = document.getElementById('stopSeqBtn');
   const clearSeqBtn = document.getElementById('clearSeqBtn');
 
   let socket = null;
@@ -363,14 +365,35 @@
 
   clearSeqBtn.addEventListener('click', () => { sequence = []; renderSequence(); });
 
-  playSeqBtn.addEventListener('click', () => {
-    if (!socket || !socket.connected || sequence.length === 0) return;
-    // Convert to server format - send all selected groups per step
-    const steps = sequence.map(s => ({
+  let looping = false;
+
+  function buildSteps() {
+    return sequence.map(s => ({
       c: s.c, e: s.e, d: s.d, wait: s.wait,
       groups: s.groups.length === NUM_GROUPS ? [0] : [...s.groups],
     }));
-    socket.emit('sequence', { steps });
+  }
+
+  playSeqBtn.addEventListener('click', () => {
+    if (!socket || !socket.connected || sequence.length === 0) return;
+    socket.emit('sequence', { steps: buildSteps(), loop: false });
+  });
+
+  loopSeqBtn.addEventListener('click', () => {
+    if (!socket || !socket.connected || sequence.length === 0) return;
+    looping = true;
+    stopSeqBtn.style.display = '';
+    loopSeqBtn.style.display = 'none';
+    playSeqBtn.style.display = 'none';
+    socket.emit('sequence', { steps: buildSteps(), loop: true });
+  });
+
+  stopSeqBtn.addEventListener('click', () => {
+    looping = false;
+    stopSeqBtn.style.display = 'none';
+    loopSeqBtn.style.display = '';
+    playSeqBtn.style.display = '';
+    socket.emit('stop-sequence');
   });
 
   // --- Keyboard shortcuts ---
