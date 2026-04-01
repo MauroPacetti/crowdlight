@@ -94,41 +94,46 @@
     const effect = data.e || 'solid';
     const duration = data.d || 500;
 
-    // Remove old effect classes and reset animation
+    // Remove old effect classes and reset inline styles
     body.classList.remove('effect-solid', 'effect-fade', 'effect-pulse', 'effect-strobe');
-    // Force animation restart by removing and re-adding class
-    body.style.animation = 'none';
-    body.style.transition = 'none';
-    void body.offsetHeight; // Force reflow to reset
+    body.style.removeProperty('animation');
+    body.style.removeProperty('transition');
+    void body.offsetHeight; // Force reflow to reset animations
 
     // Set CSS custom properties for animation durations
     body.style.setProperty('--pulse-duration', duration + 'ms');
     body.style.setProperty('--strobe-duration', Math.max(50, duration / 5) + 'ms');
 
-    // Clear inline animation/transition override
-    body.style.animation = '';
-
     // Apply effect
     switch (effect) {
       case 'solid':
+        body.style.removeProperty('animation');
+        body.style.removeProperty('transition');
         body.classList.add('effect-solid');
         body.style.backgroundColor = color;
         break;
       case 'fade':
+        body.style.removeProperty('animation');
         body.style.transition = 'background-color ' + duration + 'ms ease';
         body.classList.add('effect-fade');
         void body.offsetHeight;
         body.style.backgroundColor = color;
         break;
       case 'pulse':
+        body.style.removeProperty('transition');
         body.style.backgroundColor = color;
+        void body.offsetHeight;
         body.classList.add('effect-pulse');
         break;
       case 'strobe':
+        body.style.removeProperty('transition');
         body.style.backgroundColor = color;
+        void body.offsetHeight;
         body.classList.add('effect-strobe');
         break;
       default:
+        body.style.removeProperty('animation');
+        body.style.removeProperty('transition');
         body.classList.add('effect-solid');
         body.style.backgroundColor = color;
     }
