@@ -19,7 +19,7 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 // ============ EVENT MANAGER ============
 class EventState {

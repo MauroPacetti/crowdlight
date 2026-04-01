@@ -5,6 +5,7 @@ const fs = require('fs');
 const QRCode = require('qrcode');
 const { stmts } = require('../db');
 const { requireAuth } = require('../auth');
+const { getTunnelStatus } = require('../tunnel');
 
 function setupEventRoutes(app, getEventStats) {
   // List user's events
@@ -31,7 +32,14 @@ function setupEventRoutes(app, getEventStats) {
     const groups = Math.min(Math.max(Number(numGroups) || 10, 1), 50);
     const audience = Math.min(Math.max(Number(maxAudience) || 500, 10), 50000);
 
-    stmts.createEvent.run(slug, req.user.id, name.trim(), groups, audience, controllerToken);
+    try {
+      stmts.createEvent.run(slug, req.user.id, name.trim(), groups, audience, controllerToken);
+    } catch (err) {
+      if (err.message.includes('FOREIGN KEY')) {
+        return res.status(401).json({ error: 'Sessione scaduta. Esci e accedi di nuovo.' });
+      }
+      throw err;
+    }
 
     const event = stmts.getEventBySlug.get(slug);
     res.json({
@@ -117,7 +125,9 @@ function setupEventRoutes(app, getEventStats) {
     const event = stmts.getEventBySlug.get(req.params.slug);
     if (!event) return res.status(404).json({ error: 'Evento non trovato' });
 
-    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+    // Use tunnel URL if active, otherwise local
+    const tunnel = getTunnelStatus();
+    const baseUrl = (tunnel.status === 'connected' && tunnel.url) ? tunnel.url : `${req.protocol}://${req.get('host')}`;
     const url = `${baseUrl}/event/${event.slug}`;
 
     try {

@@ -20,9 +20,9 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.8.0",
+    "cloudflared": "^0.7.1",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "localtunnel": "^2.0.2",
     "nanoid": "^3.3.11",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.3",

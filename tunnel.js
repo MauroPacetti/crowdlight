@@ -1,54 +1,94 @@
-const localtunnel = require('localtunnel');
+const { spawn } = require('child_process');
+const { bin, install } = require('cloudflared');
+const fs = require('fs');
 
-let tunnel = null;
+let tunnelProcess = null;
 let tunnelUrl = null;
-let tunnelStatus = 'stopped'; // stopped, connecting, connected, error
+let tunnelStatus = 'stopped';
 let tunnelError = null;
 
 async function startTunnel(port) {
-  if (tunnel) return { url: tunnelUrl, status: tunnelStatus };
+  if (tunnelProcess && tunnelStatus === 'connected') return { url: tunnelUrl, status: tunnelStatus };
 
   tunnelStatus = 'connecting';
   tunnelError = null;
 
   try {
-    tunnel = await localtunnel({ port });
-    tunnelUrl = tunnel.url;
-    tunnelStatus = 'connected';
+    // Ensure cloudflared binary is installed
+    if (!fs.existsSync(bin)) {
+      console.log('Installing cloudflared binary...');
+      await install(bin);
+      console.log('cloudflared installed at', bin);
+    }
 
-    console.log(`Tunnel attivo: ${tunnelUrl}`);
-
-    tunnel.on('close', () => {
-      tunnel = null;
-      tunnelUrl = null;
-      tunnelStatus = 'stopped';
-      console.log('Tunnel chiuso');
+    // Spawn cloudflared directly
+    const child = spawn(bin, ['tunnel', '--url', `localhost:${port}`], {
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    tunnel.on('error', (err) => {
-      tunnelError = err.message;
-      tunnelStatus = 'error';
-      console.error('Tunnel error:', err.message);
+    tunnelProcess = child;
+
+    // Parse URL from stderr output (cloudflared logs to stderr)
+    tunnelUrl = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timeout: cloudflared non riesce a connettersi')), 30000);
+      let output = '';
+
+      function parseLine(data) {
+        output += data.toString();
+        // Look for the tunnel URL in output
+        const match = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+        if (match) {
+          clearTimeout(timeout);
+          resolve(match[0]);
+        }
+      }
+
+      child.stdout.on('data', parseLine);
+      child.stderr.on('data', parseLine);
+
+      child.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+
+      child.on('exit', (code) => {
+        if (!tunnelUrl) {
+          clearTimeout(timeout);
+          reject(new Error(`cloudflared exited with code ${code}`));
+        }
+      });
+    });
+
+    tunnelStatus = 'connected';
+    console.log(`Tunnel Cloudflare attivo: ${tunnelUrl}`);
+
+    child.on('exit', (code) => {
+      console.log('Tunnel chiuso, exit code:', code);
+      tunnelProcess = null;
+      tunnelUrl = null;
+      tunnelStatus = 'stopped';
     });
 
     return { url: tunnelUrl, status: tunnelStatus };
   } catch (err) {
-    tunnelError = err.message;
+    tunnelError = err.message || String(err);
     tunnelStatus = 'error';
-    tunnel = null;
-    console.error('Failed to start tunnel:', err.message);
+    if (tunnelProcess) { try { tunnelProcess.kill(); } catch(e) {} }
+    tunnelProcess = null;
+    tunnelUrl = null;
+    console.error('Failed to start Cloudflare tunnel:', tunnelError);
     return { url: null, status: tunnelStatus, error: tunnelError };
   }
 }
 
-function stopTunnel() {
-  if (tunnel) {
-    tunnel.close();
-    tunnel = null;
-    tunnelUrl = null;
-    tunnelStatus = 'stopped';
-    tunnelError = null;
+async function stopTunnel() {
+  if (tunnelProcess) {
+    try { tunnelProcess.kill(); } catch(e) {}
+    tunnelProcess = null;
   }
+  tunnelUrl = null;
+  tunnelStatus = 'stopped';
+  tunnelError = null;
   return { status: 'stopped' };
 }
 
@@ -66,8 +106,8 @@ function setupTunnelRoutes(app, port) {
     res.json(result);
   });
 
-  app.post('/api/tunnel/stop', (req, res) => {
-    const result = stopTunnel();
+  app.post('/api/tunnel/stop', async (req, res) => {
+    const result = await stopTunnel();
     res.json(result);
   });
 
