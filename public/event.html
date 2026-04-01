@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>CrowdLight</title>
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+    body { background: #000; display: flex; align-items: center; justify-content: center; transition: none; }
+    /* Consent overlay */
+    .consent {
+      position: fixed; inset: 0; background: #0d0d0d;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 100; padding: 2rem; text-align: center;
+    }
+    .consent.hidden { display: none; }
+    .consent h1 { font-family: -apple-system, sans-serif; font-size: 1.8rem; font-weight: 800; color: #fff; margin-bottom: 0.3rem; }
+    .consent h1 span { color: #764ba2; }
+    .consent .event-name { color: #4ecdc4; font-size: 1.2rem; margin-bottom: 1.5rem; font-family: -apple-system, sans-serif; }
+    .consent p { color: #888; font-size: 0.85rem; line-height: 1.5; max-width: 320px; margin-bottom: 1.5rem; font-family: -apple-system, sans-serif; }
+    .consent button {
+      padding: 0.9rem 2.5rem; border: none; border-radius: 12px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff; font-size: 1.1rem; font-weight: 700; cursor: pointer;
+      font-family: -apple-system, sans-serif;
+    }
+    .consent .error { color: #e74c3c; font-size: 0.8rem; margin-top: 1rem; display: none; font-family: -apple-system, sans-serif; }
+    /* Status badges */
+    .status {
+      position: fixed; top: env(safe-area-inset-top, 10px); left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.5); color: #fff; padding: 6px 16px; border-radius: 20px;
+      font-family: -apple-system, sans-serif; font-size: 0.75rem;
+      opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 10;
+    }
+    .status.visible { opacity: 1; }
+    .group-badge {
+      position: fixed; bottom: env(safe-area-inset-bottom, 10px); right: 10px;
+      background: rgba(0,0,0,0.4); color: rgba(255,255,255,0.4); padding: 4px 10px;
+      border-radius: 12px; font-family: -apple-system, sans-serif; font-size: 0.65rem;
+      opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 10;
+    }
+    .group-badge.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="consent" id="consent">
+    <h1>Crowd<span>Light</span></h1>
+    <div class="event-name" id="eventName">Caricamento...</div>
+    <p>Il tuo telefono diventerà una luce controllata dal palco. Alza la luminosità al massimo!</p>
+    <button id="enterBtn" style="display:none;">Entra nello Show</button>
+    <div class="error" id="consentError"></div>
+  </div>
+  <div class="status" id="status">Connessione...</div>
+  <div class="group-badge" id="groupBadge"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/event.js"></script>
+</body>
+</html>

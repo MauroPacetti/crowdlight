@@ -1,6 +1,11 @@
 // CrowdLight Controller - 10 Groups as DMX fixtures
 (function () {
-  const NUM_GROUPS = 10;
+  // Extract slug from URL: /event/{slug}/control
+  const pathParts = window.location.pathname.split('/');
+  const eventIdx = pathParts.indexOf('event');
+  const EVENT_SLUG = eventIdx >= 0 ? pathParts[eventIdx + 1] : null;
+
+  let NUM_GROUPS = 10;
 
   // --- Config ---
   const PRESETS = [
@@ -147,12 +152,24 @@
   buildDmxMap();
 
   // --- Login ---
+  // Check if we have a controller token stored for this event
+  const storedToken = EVENT_SLUG ? localStorage.getItem('ctrl_token_' + EVENT_SLUG) : null;
+  if (storedToken) {
+    // Auto-connect with stored token
+    loginPass.value = storedToken;
+  }
+
   function doLogin() {
     const pass = loginPass.value.trim();
     if (!pass) return;
+    if (!EVENT_SLUG) {
+      loginError.style.display = 'block';
+      loginError.textContent = 'URL non valido - manca lo slug evento';
+      return;
+    }
 
     socket = io('/controller', {
-      auth: { password: pass },
+      auth: { token: pass, slug: EVENT_SLUG },
       reconnection: true,
       transports: ['websocket', 'polling'],
     });
@@ -160,6 +177,8 @@
     socket.on('connect', () => {
       loginOverlay.classList.add('hidden');
       connDot.classList.add('connected');
+      // Store token for this event
+      localStorage.setItem('ctrl_token_' + EVENT_SLUG, pass);
       setupSocketListeners();
     });
 
@@ -175,6 +194,9 @@
     });
   }
 
+  // Auto-login if token stored
+  if (storedToken) setTimeout(doLogin, 100);
+
   loginBtn.addEventListener('click', doLogin);
   loginPass.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 
@@ -187,6 +209,14 @@
     });
 
     socket.on('current-state', (data) => {
+      // Update NUM_GROUPS dynamically from server
+      if (data.numGroups && data.numGroups !== NUM_GROUPS) {
+        NUM_GROUPS = data.numGroups;
+        selectedGroups.clear();
+        for (let i = 1; i <= NUM_GROUPS; i++) { selectedGroups.add(i); groupColors[i] = '#000000'; }
+        buildGroupsGrid();
+        buildDmxMap();
+      }
       if (data.groups) {
         for (const [g, state] of Object.entries(data.groups)) {
           groupColors[g] = state.c || '#000000';

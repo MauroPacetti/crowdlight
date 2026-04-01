@@ -1,0 +1,104 @@
+const { nanoid } = require('nanoid');
+const crypto = require('crypto');
+const QRCode = require('qrcode');
+const { stmts } = require('../db');
+const { requireAuth } = require('../auth');
+
+function setupEventRoutes(app, getEventStats) {
+  // List user's events
+  app.get('/api/events', requireAuth, (req, res) => {
+    const events = stmts.getEventsByUser.all(req.user.id);
+    // Add live stats
+    const enriched = events.map(ev => ({
+      ...ev,
+      is_active: !!ev.is_active,
+      stats: getEventStats(ev.slug),
+    }));
+    res.json({ events: enriched });
+  });
+
+  // Create event
+  app.post('/api/events', requireAuth, (req, res) => {
+    const { name, numGroups, maxAudience } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Nome evento richiesto' });
+    }
+
+    const slug = nanoid(8);
+    const controllerToken = crypto.randomBytes(24).toString('hex');
+    const groups = Math.min(Math.max(Number(numGroups) || 10, 1), 50);
+    const audience = Math.min(Math.max(Number(maxAudience) || 500, 10), 50000);
+
+    stmts.createEvent.run(slug, req.user.id, name.trim(), groups, audience, controllerToken);
+
+    const event = stmts.getEventBySlug.get(slug);
+    res.json({
+      event: {
+        ...event,
+        is_active: !!event.is_active,
+      }
+    });
+  });
+
+  // Get event info (public - for audience page)
+  app.get('/api/events/:slug', (req, res) => {
+    const event = stmts.getEventBySlug.get(req.params.slug);
+    if (!event) return res.status(404).json({ error: 'Evento non trovato' });
+
+    res.json({
+      event: {
+        slug: event.slug,
+        name: event.name,
+        num_groups: event.num_groups,
+        is_active: !!event.is_active,
+        stats: getEventStats(event.slug),
+      }
+    });
+  });
+
+  // Update event
+  app.put('/api/events/:slug', requireAuth, (req, res) => {
+    const { name, numGroups, maxAudience, isActive } = req.body;
+    const event = stmts.getEventBySlug.get(req.params.slug);
+    if (!event) return res.status(404).json({ error: 'Evento non trovato' });
+    if (event.user_id !== req.user.id) return res.status(403).json({ error: 'Non autorizzato' });
+
+    const updatedName = (name || event.name).trim();
+    const updatedGroups = Math.min(Math.max(Number(numGroups) || event.num_groups, 1), 50);
+    const updatedAudience = Math.min(Math.max(Number(maxAudience) || event.max_audience, 10), 50000);
+    const updatedActive = isActive !== undefined ? (isActive ? 1 : 0) : event.is_active;
+
+    stmts.updateEvent.run(updatedName, updatedGroups, updatedAudience, updatedActive, req.params.slug, req.user.id);
+    const updated = stmts.getEventBySlug.get(req.params.slug);
+    res.json({ event: { ...updated, is_active: !!updated.is_active } });
+  });
+
+  // Delete event
+  app.delete('/api/events/:slug', requireAuth, (req, res) => {
+    const result = stmts.deleteEvent.run(req.params.slug, req.user.id);
+    if (result.changes === 0) return res.status(404).json({ error: 'Evento non trovato' });
+    res.json({ ok: true });
+  });
+
+  // QR Code
+  app.get('/api/events/:slug/qr', async (req, res) => {
+    const event = stmts.getEventBySlug.get(req.params.slug);
+    if (!event) return res.status(404).json({ error: 'Evento non trovato' });
+
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const url = `${baseUrl}/event/${event.slug}`;
+
+    try {
+      const qr = await QRCode.toDataURL(url, {
+        width: 512,
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' },
+      });
+      res.json({ qr, url });
+    } catch (err) {
+      res.status(500).json({ error: 'Errore generazione QR' });
+    }
+  });
+}
+
+module.exports = { setupEventRoutes };

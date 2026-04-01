@@ -3,6 +3,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const dgram = require('dgram');
+const { stmts } = require('./db');
+const { setupAuthRoutes, verifyToken } = require('./auth');
+const { setupEventRoutes } = require('./routes/events');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,267 +16,80 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
-const CONTROLLER_PASSWORD = process.env.CONTROLLER_PASS || 'crowdlight2024';
-const NUM_GROUPS = 10;
 
-// Serve static files
+// Middleware
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
-// --- State ---
-const groups = new Map(); // groupId (1-10) -> Set of socket ids
-const clients = new Map(); // socket id -> { group, connectedAt }
-// Per-group color state
-const groupStates = new Map(); // groupId -> { c, e, d }
-let connectedCount = 0;
-
-// Initialize groups
-for (let i = 1; i <= NUM_GROUPS; i++) {
-  groups.set(i, new Set());
-  groupStates.set(i, { c: '#000000', e: 'solid', d: 500 });
-}
-
-// --- Random group assignment (balanced) ---
-function assignGroup() {
-  // Find group(s) with fewest members
-  let minSize = Infinity;
-  for (const [, members] of groups) {
-    if (members.size < minSize) minSize = members.size;
-  }
-  // Collect groups with min size
-  const candidates = [];
-  for (const [id, members] of groups) {
-    if (members.size === minSize) candidates.push(id);
-  }
-  // Pick random among smallest groups
-  return candidates[Math.floor(Math.random() * candidates.length)];
-}
-
-// --- API endpoint for stats ---
-app.get('/api/stats', (req, res) => {
-  res.json(getStats());
-});
-
-// --- REST API for external control (ArtNet bridge, etc.) ---
-app.post('/api/color', (req, res) => {
-  const auth = req.headers['x-password'] || req.body.password;
-  if (auth !== CONTROLLER_PASSWORD) {
-    return res.status(401).json({ error: 'Password non valida' });
-  }
-  const data = req.body;
-  const state = {
-    c: String(data.c || '#000000').substring(0, 7),
-    e: ['solid', 'fade', 'pulse', 'strobe'].includes(data.e) ? data.e : 'solid',
-    d: Math.min(Math.max(Number(data.d) || 500, 50), 5000),
-  };
-  const groupId = Number(data.group);
-
-  if (groupId >= 1 && groupId <= NUM_GROUPS) {
-    groupStates.set(groupId, state);
-    audience.to(`group:${groupId}`).volatile.emit('color', state);
-  } else {
-    // All groups
-    for (let i = 1; i <= NUM_GROUPS; i++) {
-      groupStates.set(i, state);
-    }
-    audience.volatile.emit('color', state);
-  }
-  res.json({ ok: true, state });
-});
-
-// Batch update: multiple groups at once (used by ArtNet bridge)
-app.post('/api/color-batch', (req, res) => {
-  const auth = req.headers['x-password'] || req.body.password;
-  if (auth !== CONTROLLER_PASSWORD) {
-    return res.status(401).json({ error: 'Password non valida' });
-  }
-  const updates = req.body.groups; // array of { group, c, e, d }
-  if (!Array.isArray(updates)) return res.status(400).json({ error: 'Invalid' });
-
-  for (const data of updates) {
-    const groupId = Number(data.group);
-    if (groupId < 1 || groupId > NUM_GROUPS) continue;
-    const state = {
-      c: String(data.c || '#000000').substring(0, 7),
-      e: ['solid', 'fade', 'pulse', 'strobe'].includes(data.e) ? data.e : 'solid',
-      d: Math.min(Math.max(Number(data.d) || 500, 50), 5000),
+// ============ EVENT MANAGER ============
+class EventState {
+  constructor(slug, name, numGroups, controllerToken) {
+    this.slug = slug;
+    this.name = name;
+    this.numGroups = numGroups;
+    this.controllerToken = controllerToken;
+    this.groups = new Map();
+    this.clients = new Map();
+    this.groupStates = new Map();
+    this.connectedCount = 0;
+    this.seqTimers = [];
+    this.artnet = {
+      active: false, socket: null, universe: 0, startChannel: 1,
+      sourceIp: null, packetsTotal: 0, packetsPerSec: 0,
+      lastCountReset: Date.now(), packetsSinceReset: 0,
+      lastSent: {}, lastSendTime: 0, throttleMs: 33,
+      dmxValues: {}, statusInterval: null,
     };
-    groupStates.set(groupId, state);
-    audience.to(`group:${groupId}`).volatile.emit('color', state);
-  }
-  res.json({ ok: true });
-});
 
-app.post('/api/blackout', (req, res) => {
-  const auth = req.headers['x-password'] || req.body.password;
-  if (auth !== CONTROLLER_PASSWORD) {
-    return res.status(401).json({ error: 'Password non valida' });
-  }
-  const state = { c: '#000000', e: 'solid', d: 0 };
-  for (let i = 1; i <= NUM_GROUPS; i++) {
-    groupStates.set(i, state);
-  }
-  audience.volatile.emit('color', state);
-  res.json({ ok: true });
-});
-
-// --- Audience namespace ---
-const audience = io.of('/audience');
-
-audience.on('connection', (socket) => {
-  connectedCount++;
-
-  // Assign random group (balanced)
-  const groupId = assignGroup();
-  clients.set(socket.id, { group: groupId, connectedAt: Date.now() });
-  groups.get(groupId).add(socket.id);
-  socket.join(`group:${groupId}`);
-
-  // Send group assignment and current state
-  socket.emit('assigned', { group: groupId, total: NUM_GROUPS });
-  const currentGroupState = groupStates.get(groupId);
-  if (currentGroupState) socket.emit('color', currentGroupState);
-
-  // Notify controllers
-  io.of('/controller').emit('stats', getStats());
-
-  socket.on('disconnect', () => {
-    connectedCount--;
-    const client = clients.get(socket.id);
-    if (client) {
-      const group = groups.get(client.group);
-      if (group) group.delete(socket.id);
-    }
-    clients.delete(socket.id);
-    io.of('/controller').emit('stats', getStats());
-  });
-});
-
-// --- Controller namespace ---
-const controller = io.of('/controller');
-
-controller.use((socket, next) => {
-  const pass = socket.handshake.auth.password;
-  if (pass === CONTROLLER_PASSWORD) {
-    next();
-  } else {
-    next(new Error('Password non valida'));
-  }
-});
-
-controller.on('connection', (socket) => {
-  // Send current state and stats
-  socket.emit('stats', getStats());
-  const allStates = {};
-  for (let i = 1; i <= NUM_GROUPS; i++) {
-    allStates[i] = groupStates.get(i);
-  }
-  socket.emit('current-state', { groups: allStates, numGroups: NUM_GROUPS });
-
-  // Color to ALL groups
-  socket.on('color-all', (data) => {
-    if (!data || !data.c) return;
-    const state = sanitizeState(data);
-    for (let i = 1; i <= NUM_GROUPS; i++) {
-      groupStates.set(i, state);
-    }
-    audience.volatile.emit('color', state);
-    controller.emit('group-update', { group: 'all', state });
-  });
-
-  // Color to a specific group
-  socket.on('color-group', (data) => {
-    if (!data || !data.c || !data.group) return;
-    const groupId = Number(data.group);
-    if (groupId < 1 || groupId > NUM_GROUPS) return;
-    const state = sanitizeState(data);
-    groupStates.set(groupId, state);
-    audience.to(`group:${groupId}`).volatile.emit('color', state);
-    controller.emit('group-update', { group: groupId, state });
-  });
-
-  // Batch update from controller
-  socket.on('color-batch', (data) => {
-    if (!Array.isArray(data.groups)) return;
-    for (const item of data.groups) {
-      const groupId = Number(item.group);
-      if (groupId < 1 || groupId > NUM_GROUPS) continue;
-      const state = sanitizeState(item);
-      groupStates.set(groupId, state);
-      audience.to(`group:${groupId}`).volatile.emit('color', state);
-    }
-    // Send full state update to all controllers
-    const allStates = {};
-    for (let i = 1; i <= NUM_GROUPS; i++) {
-      allStates[i] = groupStates.get(i);
-    }
-    controller.emit('state-sync', allStates);
-  });
-
-  // Blackout
-  socket.on('blackout', () => {
-    const state = { c: '#000000', e: 'solid', d: 0 };
-    for (let i = 1; i <= NUM_GROUPS; i++) {
-      groupStates.set(i, state);
-    }
-    audience.volatile.emit('color', state);
-    controller.emit('group-update', { group: 'all', state });
-  });
-
-  // Sequence (with loop support)
-  let seqTimers = [];
-
-  function clearSeqTimers() {
-    for (const t of seqTimers) clearTimeout(t);
-    seqTimers = [];
-  }
-
-  function executeStep(step) {
-    const state = sanitizeState(step);
-    const targetGroups = Array.isArray(step.groups) ? step.groups : [Number(step.group) || 0];
-    const isAll = targetGroups.includes(0);
-    if (isAll) {
-      for (let i = 1; i <= NUM_GROUPS; i++) groupStates.set(i, state);
-      audience.volatile.emit('color', state);
-      controller.emit('group-update', { group: 'all', state });
-    } else {
-      for (const gId of targetGroups) {
-        const groupId = Number(gId);
-        if (groupId >= 1 && groupId <= NUM_GROUPS) {
-          groupStates.set(groupId, state);
-          audience.to(`group:${groupId}`).volatile.emit('color', state);
-        }
-      }
-      const allStates = {};
-      for (let i = 1; i <= NUM_GROUPS; i++) allStates[i] = groupStates.get(i);
-      controller.emit('state-sync', allStates);
+    for (let i = 1; i <= numGroups; i++) {
+      this.groups.set(i, new Set());
+      this.groupStates.set(i, { c: '#000000', e: 'solid', d: 500 });
+      this.artnet.lastSent[i] = '#000000';
+      this.artnet.dmxValues[i] = { r: 0, g: 0, b: 0, hex: '#000000' };
     }
   }
 
-  function playSequence(steps, loop) {
-    clearSeqTimers();
-    let delay = 0;
-    const totalDuration = steps.reduce((sum, s) => sum + (Number(s.wait) || 1000), 0);
-    for (const step of steps.slice(0, 100)) {
-      const t = setTimeout(() => executeStep(step), delay);
-      seqTimers.push(t);
-      delay += Number(step.wait) || 1000;
+  assignGroup() {
+    let minSize = Infinity;
+    for (const [, members] of this.groups) {
+      if (members.size < minSize) minSize = members.size;
     }
-    if (loop) {
-      const t = setTimeout(() => playSequence(steps, true), totalDuration);
-      seqTimers.push(t);
+    const candidates = [];
+    for (const [id, members] of this.groups) {
+      if (members.size === minSize) candidates.push(id);
     }
+    return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
-  socket.on('sequence', (data) => {
-    if (!Array.isArray(data.steps)) return;
-    playSequence(data.steps, !!data.loop);
-  });
+  getStats() {
+    const groupStats = {};
+    for (let i = 1; i <= this.numGroups; i++) {
+      groupStats[i] = this.groups.get(i).size;
+    }
+    return { total: this.connectedCount, groups: groupStats, numGroups: this.numGroups };
+  }
 
-  socket.on('stop-sequence', () => {
-    clearSeqTimers();
-  });
-});
+  clearSeqTimers() {
+    for (const t of this.seqTimers) clearTimeout(t);
+    this.seqTimers = [];
+  }
+}
+
+// Active event states in memory
+const eventStates = new Map(); // slug -> EventState
+
+function getOrCreateEventState(slug) {
+  if (eventStates.has(slug)) return eventStates.get(slug);
+  const event = stmts.getEventBySlug.get(slug);
+  if (!event || !event.is_active) return null;
+  const state = new EventState(slug, event.name, event.num_groups, event.controller_token);
+  eventStates.set(slug, state);
+  return state;
+}
+
+function getEventStats(slug) {
+  const state = eventStates.get(slug);
+  return state ? state.getStats() : { total: 0, groups: {}, numGroups: 10 };
+}
 
 function sanitizeState(data) {
   return {
@@ -283,191 +99,313 @@ function sanitizeState(data) {
   };
 }
 
-function getStats() {
-  const groupStats = {};
-  for (let i = 1; i <= NUM_GROUPS; i++) {
-    groupStats[i] = groups.get(i).size;
+// ============ ROUTES ============
+setupAuthRoutes(app);
+setupEventRoutes(app, getEventStats);
+
+// Page routes
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
+app.get('/event/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'event.html')));
+app.get('/event/:slug/control', (req, res) => res.sendFile(path.join(__dirname, 'public', 'controller.html')));
+
+// Static files (after page routes to avoid conflicts)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ============ AUDIENCE NAMESPACE ============
+const audience = io.of('/audience');
+
+audience.on('connection', (socket) => {
+  const slug = socket.handshake.auth.slug;
+  if (!slug) return socket.disconnect();
+
+  const state = getOrCreateEventState(slug);
+  if (!state) {
+    socket.emit('error', { message: 'Evento non trovato o non attivo' });
+    return socket.disconnect();
   }
-  return { total: connectedCount, groups: groupStats, numGroups: NUM_GROUPS };
-}
 
-// ============ INTEGRATED ARTNET BRIDGE ============
+  state.connectedCount++;
+  const groupId = state.assignGroup();
+  state.clients.set(socket.id, { group: groupId, connectedAt: Date.now() });
+  state.groups.get(groupId).add(socket.id);
+  socket.join(`${slug}:group:${groupId}`);
+  socket.join(`${slug}:all`);
+
+  socket.emit('assigned', { group: groupId, total: state.numGroups });
+  const currentGroupState = state.groupStates.get(groupId);
+  if (currentGroupState) socket.emit('color', currentGroupState);
+
+  // Notify controllers of this event
+  controller.to(`ctrl:${slug}`).emit('stats', state.getStats());
+
+  socket.on('disconnect', () => {
+    state.connectedCount--;
+    const client = state.clients.get(socket.id);
+    if (client) {
+      const group = state.groups.get(client.group);
+      if (group) group.delete(socket.id);
+    }
+    state.clients.delete(socket.id);
+    controller.to(`ctrl:${slug}`).emit('stats', state.getStats());
+
+    // Cleanup empty event states after a delay
+    if (state.connectedCount <= 0) {
+      setTimeout(() => {
+        const current = eventStates.get(slug);
+        if (current && current.connectedCount <= 0 && current.clients.size === 0) {
+          eventStates.delete(slug);
+        }
+      }, 60000);
+    }
+  });
+});
+
+// ============ CONTROLLER NAMESPACE ============
+const controller = io.of('/controller');
+
+controller.use((socket, next) => {
+  const { token, slug } = socket.handshake.auth;
+  if (!token || !slug) return next(new Error('Token e slug richiesti'));
+
+  const event = stmts.getEventBySlug.get(slug);
+  if (!event) return next(new Error('Evento non trovato'));
+  if (event.controller_token !== token) return next(new Error('Token non valido'));
+  if (!event.is_active) return next(new Error('Evento non attivo'));
+
+  socket.eventSlug = slug;
+  socket.eventData = event;
+  next();
+});
+
+controller.on('connection', (socket) => {
+  const slug = socket.eventSlug;
+  const state = getOrCreateEventState(slug);
+  if (!state) return socket.disconnect();
+
+  socket.join(`ctrl:${slug}`);
+
+  // Send current state
+  socket.emit('stats', state.getStats());
+  const allStates = {};
+  for (let i = 1; i <= state.numGroups; i++) {
+    allStates[i] = state.groupStates.get(i);
+  }
+  socket.emit('current-state', { groups: allStates, numGroups: state.numGroups });
+
+  // Color to ALL groups
+  socket.on('color-all', (data) => {
+    if (!data || !data.c) return;
+    const st = sanitizeState(data);
+    for (let i = 1; i <= state.numGroups; i++) state.groupStates.set(i, st);
+    audience.to(`${slug}:all`).volatile.emit('color', st);
+    controller.to(`ctrl:${slug}`).emit('group-update', { group: 'all', state: st });
+  });
+
+  // Color to specific group
+  socket.on('color-group', (data) => {
+    if (!data || !data.c || !data.group) return;
+    const groupId = Number(data.group);
+    if (groupId < 1 || groupId > state.numGroups) return;
+    const st = sanitizeState(data);
+    state.groupStates.set(groupId, st);
+    audience.to(`${slug}:group:${groupId}`).volatile.emit('color', st);
+    controller.to(`ctrl:${slug}`).emit('group-update', { group: groupId, state: st });
+  });
+
+  // Batch update
+  socket.on('color-batch', (data) => {
+    if (!Array.isArray(data.groups)) return;
+    for (const item of data.groups) {
+      const groupId = Number(item.group);
+      if (groupId < 1 || groupId > state.numGroups) continue;
+      const st = sanitizeState(item);
+      state.groupStates.set(groupId, st);
+      audience.to(`${slug}:group:${groupId}`).volatile.emit('color', st);
+    }
+    const allStates = {};
+    for (let i = 1; i <= state.numGroups; i++) allStates[i] = state.groupStates.get(i);
+    controller.to(`ctrl:${slug}`).emit('state-sync', allStates);
+  });
+
+  // Blackout
+  socket.on('blackout', () => {
+    const st = { c: '#000000', e: 'solid', d: 0 };
+    for (let i = 1; i <= state.numGroups; i++) state.groupStates.set(i, st);
+    audience.to(`${slug}:all`).volatile.emit('color', st);
+    controller.to(`ctrl:${slug}`).emit('group-update', { group: 'all', state: st });
+  });
+
+  // Sequence
+  function executeStep(step) {
+    const st = sanitizeState(step);
+    const targetGroups = Array.isArray(step.groups) ? step.groups : [Number(step.group) || 0];
+    const isAll = targetGroups.includes(0);
+    if (isAll) {
+      for (let i = 1; i <= state.numGroups; i++) state.groupStates.set(i, st);
+      audience.to(`${slug}:all`).volatile.emit('color', st);
+      controller.to(`ctrl:${slug}`).emit('group-update', { group: 'all', state: st });
+    } else {
+      for (const gId of targetGroups) {
+        const groupId = Number(gId);
+        if (groupId >= 1 && groupId <= state.numGroups) {
+          state.groupStates.set(groupId, st);
+          audience.to(`${slug}:group:${groupId}`).volatile.emit('color', st);
+        }
+      }
+      const allStates = {};
+      for (let i = 1; i <= state.numGroups; i++) allStates[i] = state.groupStates.get(i);
+      controller.to(`ctrl:${slug}`).emit('state-sync', allStates);
+    }
+  }
+
+  function playSequence(steps, loop) {
+    state.clearSeqTimers();
+    let delay = 0;
+    const totalDuration = steps.reduce((sum, s) => sum + (Number(s.wait) || 1000), 0);
+    for (const step of steps.slice(0, 100)) {
+      const t = setTimeout(() => executeStep(step), delay);
+      state.seqTimers.push(t);
+      delay += Number(step.wait) || 1000;
+    }
+    if (loop) {
+      const t = setTimeout(() => playSequence(steps, true), totalDuration);
+      state.seqTimers.push(t);
+    }
+  }
+
+  socket.on('sequence', (data) => {
+    if (!Array.isArray(data.steps)) return;
+    playSequence(data.steps, !!data.loop);
+  });
+
+  socket.on('stop-sequence', () => {
+    state.clearSeqTimers();
+  });
+
+  // ============ ARTNET (per-event) ============
+  socket.emit('artnet-status', getArtNetStatus(state));
+
+  socket.on('artnet-start', () => startArtNet(state, slug));
+  socket.on('artnet-stop', () => stopArtNet(state));
+  socket.on('artnet-config', (data) => {
+    if (data.universe !== undefined) state.artnet.universe = Number(data.universe) || 0;
+    if (data.startChannel !== undefined) state.artnet.startChannel = Math.max(1, Number(data.startChannel) || 1);
+    for (let i = 1; i <= state.numGroups; i++) state.artnet.lastSent[i] = '';
+    controller.to(`ctrl:${slug}`).emit('artnet-status', getArtNetStatus(state));
+  });
+});
+
+// ============ ARTNET FUNCTIONS ============
 const CHANNELS_PER_GROUP = 3;
-const TOTAL_CHANNELS = NUM_GROUPS * CHANNELS_PER_GROUP;
-
-const artnet = {
-  active: false,
-  socket: null,
-  universe: parseInt(process.env.ARTNET_UNIVERSE || '0'),
-  startChannel: parseInt(process.env.ARTNET_START_CHANNEL || '1'),
-  sourceIp: null,
-  packetsTotal: 0,
-  packetsPerSec: 0,
-  lastCountReset: Date.now(),
-  packetsSinceReset: 0,
-  lastSent: {},
-  lastSendTime: 0,
-  throttleMs: 33,
-  statusInterval: null,
-  dmxValues: {}, // groupId -> { r, g, b, hex }
-};
-for (let i = 1; i <= NUM_GROUPS; i++) {
-  artnet.lastSent[i] = '#000000';
-  artnet.dmxValues[i] = { r: 0, g: 0, b: 0, hex: '#000000' };
-}
 
 function rgbToHex(r, g, b) {
   return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
 }
 
-function startArtNet() {
-  if (artnet.active) return;
+function getArtNetStatus(state) {
+  return {
+    active: state.artnet.active,
+    universe: state.artnet.universe,
+    startChannel: state.artnet.startChannel,
+    sourceIp: state.artnet.sourceIp,
+    packetsPerSec: state.artnet.packetsPerSec,
+    packetsTotal: state.artnet.packetsTotal,
+    dmxValues: state.artnet.dmxValues,
+  };
+}
 
-  artnet.socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+function startArtNet(state, slug) {
+  if (state.artnet.active) return;
+  const totalChannels = state.numGroups * CHANNELS_PER_GROUP;
 
-  artnet.socket.on('message', (msg, rinfo) => {
+  state.artnet.socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+
+  state.artnet.socket.on('message', (msg) => {
     if (msg.length < 18) return;
     if (msg.toString('ascii', 0, 7) !== 'Art-Net') return;
     if (msg.readUInt16LE(8) !== 0x5000) return;
 
     const subUni = msg.readUInt8(14);
     const net = msg.readUInt8(15);
-    const universe = (net << 8) | subUni;
-    if (universe !== artnet.universe) return;
+    if (((net << 8) | subUni) !== state.artnet.universe) return;
 
     const dmxLength = msg.readUInt16BE(16);
     const dmxData = msg.slice(18, 18 + dmxLength);
-    const ch = artnet.startChannel - 1; // 0-indexed
-    if (dmxData.length < ch + TOTAL_CHANNELS) return;
+    const ch = state.artnet.startChannel - 1;
+    if (dmxData.length < ch + totalChannels) return;
 
-    artnet.sourceIp = rinfo.address;
-    artnet.packetsTotal++;
-    artnet.packetsSinceReset++;
+    state.artnet.packetsTotal++;
+    state.artnet.packetsSinceReset++;
 
-    // Throttle
     const now = Date.now();
-    if (now - artnet.lastSendTime < artnet.throttleMs) return;
+    if (now - state.artnet.lastSendTime < state.artnet.throttleMs) return;
 
     const updates = [];
-    for (let i = 0; i < NUM_GROUPS; i++) {
+    for (let i = 0; i < state.numGroups; i++) {
       const offset = ch + i * CHANNELS_PER_GROUP;
-      const r = dmxData[offset];
-      const g = dmxData[offset + 1];
-      const b = dmxData[offset + 2];
+      const r = dmxData[offset], g = dmxData[offset + 1], b = dmxData[offset + 2];
       const color = rgbToHex(r, g, b);
       const groupId = i + 1;
-
-      artnet.dmxValues[groupId] = { r, g, b, hex: color };
-
-      if (color !== artnet.lastSent[groupId]) {
+      state.artnet.dmxValues[groupId] = { r, g, b, hex: color };
+      if (color !== state.artnet.lastSent[groupId]) {
         updates.push({ group: groupId, c: color, e: 'solid', d: 100 });
-        artnet.lastSent[groupId] = color;
+        state.artnet.lastSent[groupId] = color;
       }
     }
 
     if (updates.length === 0) return;
-    artnet.lastSendTime = now;
+    state.artnet.lastSendTime = now;
 
-    const allSame = updates.length === NUM_GROUPS && updates.every(u => u.c === updates[0].c);
+    const allSame = updates.length === state.numGroups && updates.every(u => u.c === updates[0].c);
     if (allSame) {
-      const state = { c: updates[0].c, e: 'solid', d: 100 };
-      for (let i = 1; i <= NUM_GROUPS; i++) groupStates.set(i, state);
-      audience.volatile.emit('color', state);
-      controller.emit('group-update', { group: 'all', state });
+      const st = { c: updates[0].c, e: 'solid', d: 100 };
+      for (let i = 1; i <= state.numGroups; i++) state.groupStates.set(i, st);
+      audience.to(`${slug}:all`).volatile.emit('color', st);
+      controller.to(`ctrl:${slug}`).emit('group-update', { group: 'all', state: st });
     } else {
       for (const u of updates) {
-        const state = { c: u.c, e: 'solid', d: 100 };
-        groupStates.set(u.group, state);
-        audience.to(`group:${u.group}`).volatile.emit('color', state);
+        const st = { c: u.c, e: 'solid', d: 100 };
+        state.groupStates.set(u.group, st);
+        audience.to(`${slug}:group:${u.group}`).volatile.emit('color', st);
       }
       const allStates = {};
-      for (let i = 1; i <= NUM_GROUPS; i++) allStates[i] = groupStates.get(i);
-      controller.emit('state-sync', allStates);
+      for (let i = 1; i <= state.numGroups; i++) allStates[i] = state.groupStates.get(i);
+      controller.to(`ctrl:${slug}`).emit('state-sync', allStates);
     }
   });
 
-  artnet.socket.on('error', (err) => {
-    console.error('ArtNet error:', err.message);
-    controller.emit('artnet-status', { active: false, error: err.message });
+  state.artnet.socket.on('error', (err) => {
+    controller.to(`ctrl:${slug}`).emit('artnet-status', { ...getArtNetStatus(state), active: false, error: err.message });
   });
 
-  artnet.socket.bind(6454, '0.0.0.0', () => {
-    artnet.active = true;
-    console.log('ArtNet listener started on port 6454');
-    broadcastArtNetStatus();
+  state.artnet.socket.bind(6454, '0.0.0.0', () => {
+    state.artnet.active = true;
+    controller.to(`ctrl:${slug}`).emit('artnet-status', getArtNetStatus(state));
   });
 
-  // Status broadcast every 2s
-  artnet.statusInterval = setInterval(() => {
+  state.artnet.statusInterval = setInterval(() => {
     const now = Date.now();
-    const elapsed = (now - artnet.lastCountReset) / 1000;
-    artnet.packetsPerSec = elapsed > 0 ? Math.round(artnet.packetsSinceReset / elapsed) : 0;
-    artnet.packetsSinceReset = 0;
-    artnet.lastCountReset = now;
-    broadcastArtNetStatus();
+    const elapsed = (now - state.artnet.lastCountReset) / 1000;
+    state.artnet.packetsPerSec = elapsed > 0 ? Math.round(state.artnet.packetsSinceReset / elapsed) : 0;
+    state.artnet.packetsSinceReset = 0;
+    state.artnet.lastCountReset = now;
+    controller.to(`ctrl:${slug}`).emit('artnet-status', getArtNetStatus(state));
   }, 2000);
 }
 
-function stopArtNet() {
-  if (!artnet.active) return;
-  if (artnet.statusInterval) clearInterval(artnet.statusInterval);
-  artnet.statusInterval = null;
-  if (artnet.socket) {
-    artnet.socket.close();
-    artnet.socket = null;
-  }
-  artnet.active = false;
-  artnet.sourceIp = null;
-  artnet.packetsPerSec = 0;
-  broadcastArtNetStatus();
-  console.log('ArtNet listener stopped');
+function stopArtNet(state) {
+  if (!state.artnet.active) return;
+  if (state.artnet.statusInterval) clearInterval(state.artnet.statusInterval);
+  state.artnet.statusInterval = null;
+  if (state.artnet.socket) { state.artnet.socket.close(); state.artnet.socket = null; }
+  state.artnet.active = false;
+  state.artnet.sourceIp = null;
+  state.artnet.packetsPerSec = 0;
 }
 
-function broadcastArtNetStatus() {
-  controller.emit('artnet-status', {
-    active: artnet.active,
-    universe: artnet.universe,
-    startChannel: artnet.startChannel,
-    sourceIp: artnet.sourceIp,
-    packetsPerSec: artnet.packetsPerSec,
-    packetsTotal: artnet.packetsTotal,
-    dmxValues: artnet.dmxValues,
-  });
-}
-
-// Add ArtNet control events to controller namespace
-controller.on('connection', (socket) => {
-  // Send current ArtNet status on connect
-  socket.emit('artnet-status', {
-    active: artnet.active,
-    universe: artnet.universe,
-    startChannel: artnet.startChannel,
-    sourceIp: artnet.sourceIp,
-    packetsPerSec: artnet.packetsPerSec,
-    packetsTotal: artnet.packetsTotal,
-    dmxValues: artnet.dmxValues,
-  });
-
-  socket.on('artnet-start', () => {
-    startArtNet();
-  });
-
-  socket.on('artnet-stop', () => {
-    stopArtNet();
-  });
-
-  socket.on('artnet-config', (data) => {
-    if (data.universe !== undefined) artnet.universe = Number(data.universe) || 0;
-    if (data.startChannel !== undefined) artnet.startChannel = Math.max(1, Number(data.startChannel) || 1);
-    // Reset last sent to force re-send with new config
-    for (let i = 1; i <= NUM_GROUPS; i++) artnet.lastSent[i] = '';
-    broadcastArtNetStatus();
-  });
-});
-
+// ============ START ============
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`CrowdLight server running on http://localhost:${PORT}`);
-  console.log(`Controller: http://localhost:${PORT}/controller.html`);
-  console.log(`Groups: ${NUM_GROUPS}`);
-  console.log(`Controller password: ${CONTROLLER_PASSWORD}`);
+  console.log(`CrowdLight SaaS running on http://localhost:${PORT}`);
+  console.log(`Dashboard: http://localhost:${PORT}/dashboard`);
 });
