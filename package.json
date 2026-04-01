@@ -51,6 +51,10 @@
       "package.json",
       "node_modules/**"
     ],
+    "asarUnpack": [
+      "node_modules/cloudflared/**",
+      "node_modules/better-sqlite3/**"
+    ],
     "win": {
       "target": "nsis",
       "icon": "public/icon.ico"

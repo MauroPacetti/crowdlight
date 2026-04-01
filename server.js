@@ -114,6 +114,15 @@ app.get('/event/:slug/control', (req, res) => res.sendFile(path.join(__dirname, 
 // Static files (after page routes to avoid conflicts)
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve uploads from AppData if in packaged app
+if (__dirname.includes('app.asar') || __dirname.includes('Program Files')) {
+  const appData = process.env.APPDATA || process.env.HOME || '';
+  const uploadsDir = path.join(appData, 'CrowdLight', 'uploads');
+  const fs = require('fs');
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  app.use('/uploads', express.static(uploadsDir));
+}
+
 // ============ AUDIENCE NAMESPACE ============
 const audience = io.of('/audience');
 

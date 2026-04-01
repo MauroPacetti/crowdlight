@@ -1,6 +1,9 @@
 const { spawn } = require('child_process');
-const { bin, install } = require('cloudflared');
+const { bin: originalBin, install } = require('cloudflared');
 const fs = require('fs');
+
+// In packaged Electron app, asar.unpacked path is used
+const bin = originalBin.replace('app.asar', 'app.asar.unpacked');
 
 let tunnelProcess = null;
 let tunnelUrl = null;

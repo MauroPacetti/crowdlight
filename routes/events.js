@@ -106,12 +106,18 @@ function setupEventRoutes(app, getEventStats) {
 
     const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
     const filename = `event-${req.params.slug}.${ext}`;
-    const filepath = path.join(__dirname, '..', 'public', 'uploads', filename);
 
-    // Ensure uploads dir exists
-    const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
+    // Use AppData for packaged app, otherwise public/uploads
+    let uploadsDir;
+    if (__dirname.includes('app.asar') || __dirname.includes('Program Files')) {
+      const appData = process.env.APPDATA || process.env.HOME || '';
+      uploadsDir = path.join(appData, 'CrowdLight', 'uploads');
+    } else {
+      uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
+    }
     if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
+    const filepath = path.join(uploadsDir, filename);
     fs.writeFileSync(filepath, Buffer.from(matches[2], 'base64'));
 
     const logoUrl = `/uploads/${filename}`;

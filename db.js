@@ -1,7 +1,26 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'crowdlight.db');
+// Use writable folder for database
+function getDbPath() {
+  if (process.env.DB_PATH) return process.env.DB_PATH;
+
+  // Check if we're in a packaged Electron app (asar)
+  if (__dirname.includes('app.asar') || __dirname.includes('Program Files')) {
+    // Use AppData folder on Windows
+    const appData = process.env.APPDATA || process.env.HOME || '';
+    const dir = path.join(appData, 'CrowdLight');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return path.join(dir, 'crowdlight.db');
+  }
+
+  // Development - use project directory
+  return path.join(__dirname, 'crowdlight.db');
+}
+
+const DB_PATH = getDbPath();
+console.log('Database path:', DB_PATH);
 const db = new Database(DB_PATH);
 
 // Enable WAL mode for better concurrent performance
