@@ -416,6 +416,137 @@
     }
   });
 
+  // --- ArtNet Modal ---
+  const artnetBtn = document.getElementById('artnetBtn');
+  const artnetModal = document.getElementById('artnetModal');
+  const artnetModalClose = document.getElementById('artnetModalClose');
+  const artnetDot = document.getElementById('artnetDot');
+  const artnetUniverse = document.getElementById('artnetUniverse');
+  const artnetStartCh = document.getElementById('artnetStartCh');
+  const artnetStartBtn = document.getElementById('artnetStartBtn');
+  const artnetStopBtn = document.getElementById('artnetStopBtn');
+  const artnetStatusText = document.getElementById('artnetStatusText');
+  const dmxMonitorEl = document.getElementById('dmxMonitor');
+  const artnetDmxMapEl = document.getElementById('artnetDmxMap');
+
+  // Build DMX monitor grid
+  function buildDmxMonitor() {
+    dmxMonitorEl.innerHTML = '';
+    for (let i = 1; i <= NUM_GROUPS; i++) {
+      const div = document.createElement('div');
+      div.className = 'dmx-fixture';
+      div.innerHTML = `
+        <div class="f-label">G${i}</div>
+        <div class="f-color" id="dmxColor${i}"></div>
+        <div class="f-values" id="dmxValues${i}">0/0/0</div>
+      `;
+      dmxMonitorEl.appendChild(div);
+    }
+  }
+  buildDmxMonitor();
+
+  function updateArtnetDmxMap(startCh) {
+    let html = '<table>';
+    for (let i = 1; i <= NUM_GROUPS; i++) {
+      const start = (startCh || 1) + (i - 1) * 3;
+      html += `<tr><td>Gruppo ${i}</td><td>CH ${start}-${start + 2}</td><td>R/G/B</td></tr>`;
+    }
+    html += '</table>';
+    artnetDmxMapEl.innerHTML = html;
+  }
+  updateArtnetDmxMap(1);
+
+  // Toggle modal
+  artnetBtn.addEventListener('click', () => {
+    artnetModal.classList.toggle('open');
+  });
+  artnetModalClose.addEventListener('click', () => {
+    artnetModal.classList.remove('open');
+  });
+  artnetModal.addEventListener('click', (e) => {
+    if (e.target === artnetModal) artnetModal.classList.remove('open');
+  });
+
+  // Config changes
+  artnetUniverse.addEventListener('change', () => {
+    if (!socket || !socket.connected) return;
+    socket.emit('artnet-config', { universe: parseInt(artnetUniverse.value) || 0 });
+  });
+  artnetStartCh.addEventListener('change', () => {
+    if (!socket || !socket.connected) return;
+    const ch = Math.max(1, parseInt(artnetStartCh.value) || 1);
+    artnetStartCh.value = ch;
+    socket.emit('artnet-config', { startChannel: ch });
+    updateArtnetDmxMap(ch);
+  });
+
+  // Start/Stop
+  artnetStartBtn.addEventListener('click', () => {
+    if (!socket || !socket.connected) return;
+    // Send config first, then start
+    socket.emit('artnet-config', {
+      universe: parseInt(artnetUniverse.value) || 0,
+      startChannel: Math.max(1, parseInt(artnetStartCh.value) || 1),
+    });
+    socket.emit('artnet-start');
+  });
+  artnetStopBtn.addEventListener('click', () => {
+    if (!socket || !socket.connected) return;
+    socket.emit('artnet-stop');
+  });
+
+  // Status updates
+  function handleArtNetStatus(data) {
+    const active = data.active;
+    artnetDot.className = 'artnet-indicator ' + (active ? 'on' : 'off');
+    artnetBtn.classList.toggle('active', active);
+
+    if (active) {
+      const src = data.sourceIp ? ` da ${data.sourceIp}` : '';
+      artnetStatusText.innerHTML = `
+        <span style="color:#2ecc71;">Bridge attivo</span>${src}<br>
+        Pacchetti: <strong>${data.packetsPerSec || 0}/s</strong>
+        (totale: ${data.packetsTotal || 0})<br>
+        Universe: ${data.universe} | CH iniziale: ${data.startChannel}
+      `;
+    } else {
+      artnetStatusText.innerHTML = 'Bridge inattivo';
+    }
+
+    // Update config fields
+    if (data.universe !== undefined) artnetUniverse.value = data.universe;
+    if (data.startChannel !== undefined) {
+      artnetStartCh.value = data.startChannel;
+      updateArtnetDmxMap(data.startChannel);
+    }
+
+    // Update DMX monitor
+    if (data.dmxValues) {
+      for (let i = 1; i <= NUM_GROUPS; i++) {
+        const v = data.dmxValues[i];
+        if (!v) continue;
+        const colorEl = document.getElementById(`dmxColor${i}`);
+        const valuesEl = document.getElementById(`dmxValues${i}`);
+        if (colorEl) colorEl.style.background = v.hex;
+        if (valuesEl) valuesEl.textContent = `${v.r}/${v.g}/${v.b}`;
+      }
+    }
+  }
+
+  // Add artnet-status listener after socket connects
+  const origSetupListeners = setupSocketListeners;
+  setupSocketListeners = function () {
+    origSetupListeners();
+    socket.on('artnet-status', handleArtNetStatus);
+  };
+
+  // Keyboard: Escape closes modal
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' && artnetModal.classList.contains('open')) {
+      artnetModal.classList.remove('open');
+    }
+  });
+
   // --- Utility ---
   function rgbToHex(rgb) {
     if (!rgb || rgb.startsWith('#')) return rgb;

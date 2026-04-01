@@ -235,6 +235,85 @@
     .dmx-map table { width: 100%; border-collapse: collapse; }
     .dmx-map td { padding: 2px 6px; border-bottom: 1px solid #1a1a1a; }
     .dmx-map td:first-child { color: #4ecdc4; }
+
+    /* --- ArtNet Button --- */
+    .btn-artnet {
+      padding: 0.4rem 0.8rem; border-radius: 8px;
+      border: 1px solid #333; background: #1a1a1a; color: #ccc;
+      cursor: pointer; font-size: 0.75rem;
+    }
+    .btn-artnet:hover { border-color: #666; }
+    .btn-artnet.active { background: #2ecc71; border-color: #2ecc71; color: #000; }
+
+    /* --- ArtNet Modal --- */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: none; align-items: center; justify-content: center;
+      z-index: 300;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #151515; border: 1px solid #333;
+      border-radius: 16px; padding: 1.5rem;
+      width: 480px; max-width: 95vw; max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 1rem; padding-bottom: 0.8rem; border-bottom: 1px solid #222;
+    }
+    .modal-header h2 { font-size: 1.1rem; font-weight: 700; }
+    .modal-close {
+      background: none; border: none; color: #888;
+      font-size: 1.5rem; cursor: pointer; padding: 0 4px;
+    }
+    .modal-close:hover { color: #fff; }
+    .modal-section { margin-bottom: 1rem; }
+    .modal-section-title {
+      font-size: 0.7rem; color: #888; text-transform: uppercase;
+      letter-spacing: 0.08em; margin-bottom: 0.5rem;
+    }
+    .modal-row {
+      display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.5rem;
+    }
+    .modal-row label { font-size: 0.8rem; color: #aaa; min-width: 90px; }
+    .modal-row input[type="number"] {
+      width: 80px; padding: 0.4rem; border-radius: 6px;
+      border: 1px solid #333; background: #0d0d0d; color: #fff;
+      font-size: 0.85rem; text-align: center;
+    }
+    .modal-actions { display: flex; gap: 8px; margin-bottom: 1rem; }
+    .btn-artnet-start {
+      padding: 0.5rem 1.2rem; border: none; border-radius: 8px;
+      background: #2ecc71; color: #000; font-weight: 600;
+      cursor: pointer; font-size: 0.85rem;
+    }
+    .btn-artnet-stop {
+      padding: 0.5rem 1.2rem; border: none; border-radius: 8px;
+      background: #e74c3c; color: #fff; font-weight: 600;
+      cursor: pointer; font-size: 0.85rem;
+    }
+    .artnet-indicator {
+      display: inline-block; width: 10px; height: 10px;
+      border-radius: 50%; margin-right: 6px; vertical-align: middle;
+    }
+    .artnet-indicator.on { background: #2ecc71; }
+    .artnet-indicator.off { background: #e74c3c; }
+    .dmx-monitor {
+      display: grid; grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+    }
+    .dmx-fixture {
+      background: #0d0d0d; border: 1px solid #222;
+      border-radius: 8px; padding: 6px; text-align: center;
+    }
+    .dmx-fixture .f-label { font-size: 0.6rem; color: #888; margin-bottom: 4px; }
+    .dmx-fixture .f-color {
+      width: 100%; height: 28px; border-radius: 4px;
+      border: 1px solid #333; margin-bottom: 2px;
+    }
+    .dmx-fixture .f-values { font-size: 0.55rem; color: #666; font-family: monospace; }
   </style>
 </head>
 <body>
@@ -252,6 +331,7 @@
   <div class="header">
     <h1>&#127926; Crowd<span>Light</span></h1>
     <div class="stats-bar">
+      <button class="btn-artnet" id="artnetBtn">ArtNet</button>
       <div class="stat">
         <div class="stat-num" id="totalCount">0</div>
         <div class="stat-label">Connessi</div>
@@ -327,6 +407,50 @@
         <div class="panel-title">Mappa DMX (ArtNet Bridge)</div>
         <div class="dmx-map" id="dmxMap"></div>
         <div class="artnet-status" id="artnetStatus">ArtNet Bridge: non collegato</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ArtNet Modal -->
+  <div class="modal-overlay" id="artnetModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2><span class="artnet-indicator off" id="artnetDot"></span> ArtNet Bridge</h2>
+        <button class="modal-close" id="artnetModalClose">&times;</button>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">Configurazione</div>
+        <div class="modal-row">
+          <label>Universe</label>
+          <input type="number" id="artnetUniverse" value="0" min="0" max="32767">
+        </div>
+        <div class="modal-row">
+          <label>Canale iniziale</label>
+          <input type="number" id="artnetStartCh" value="1" min="1" max="512">
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-artnet-start" id="artnetStartBtn">Avvia Bridge</button>
+        <button class="btn-artnet-stop" id="artnetStopBtn">Ferma Bridge</button>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">Status</div>
+        <div style="font-size:0.8rem;color:#aaa;margin-bottom:0.5rem;" id="artnetStatusText">
+          Bridge inattivo
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">DMX Monitor</div>
+        <div class="dmx-monitor" id="dmxMonitor"></div>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">Mappa Canali</div>
+        <div class="dmx-map" id="artnetDmxMap"></div>
       </div>
     </div>
   </div>

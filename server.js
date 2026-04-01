@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const dgram = require('dgram');
 
 const app = express();
 const server = http.createServer(app);
@@ -289,6 +290,180 @@ function getStats() {
   }
   return { total: connectedCount, groups: groupStats, numGroups: NUM_GROUPS };
 }
+
+// ============ INTEGRATED ARTNET BRIDGE ============
+const CHANNELS_PER_GROUP = 3;
+const TOTAL_CHANNELS = NUM_GROUPS * CHANNELS_PER_GROUP;
+
+const artnet = {
+  active: false,
+  socket: null,
+  universe: parseInt(process.env.ARTNET_UNIVERSE || '0'),
+  startChannel: parseInt(process.env.ARTNET_START_CHANNEL || '1'),
+  sourceIp: null,
+  packetsTotal: 0,
+  packetsPerSec: 0,
+  lastCountReset: Date.now(),
+  packetsSinceReset: 0,
+  lastSent: {},
+  lastSendTime: 0,
+  throttleMs: 33,
+  statusInterval: null,
+  dmxValues: {}, // groupId -> { r, g, b, hex }
+};
+for (let i = 1; i <= NUM_GROUPS; i++) {
+  artnet.lastSent[i] = '#000000';
+  artnet.dmxValues[i] = { r: 0, g: 0, b: 0, hex: '#000000' };
+}
+
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+function startArtNet() {
+  if (artnet.active) return;
+
+  artnet.socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+
+  artnet.socket.on('message', (msg, rinfo) => {
+    if (msg.length < 18) return;
+    if (msg.toString('ascii', 0, 7) !== 'Art-Net') return;
+    if (msg.readUInt16LE(8) !== 0x5000) return;
+
+    const subUni = msg.readUInt8(14);
+    const net = msg.readUInt8(15);
+    const universe = (net << 8) | subUni;
+    if (universe !== artnet.universe) return;
+
+    const dmxLength = msg.readUInt16BE(16);
+    const dmxData = msg.slice(18, 18 + dmxLength);
+    const ch = artnet.startChannel - 1; // 0-indexed
+    if (dmxData.length < ch + TOTAL_CHANNELS) return;
+
+    artnet.sourceIp = rinfo.address;
+    artnet.packetsTotal++;
+    artnet.packetsSinceReset++;
+
+    // Throttle
+    const now = Date.now();
+    if (now - artnet.lastSendTime < artnet.throttleMs) return;
+
+    const updates = [];
+    for (let i = 0; i < NUM_GROUPS; i++) {
+      const offset = ch + i * CHANNELS_PER_GROUP;
+      const r = dmxData[offset];
+      const g = dmxData[offset + 1];
+      const b = dmxData[offset + 2];
+      const color = rgbToHex(r, g, b);
+      const groupId = i + 1;
+
+      artnet.dmxValues[groupId] = { r, g, b, hex: color };
+
+      if (color !== artnet.lastSent[groupId]) {
+        updates.push({ group: groupId, c: color, e: 'solid', d: 100 });
+        artnet.lastSent[groupId] = color;
+      }
+    }
+
+    if (updates.length === 0) return;
+    artnet.lastSendTime = now;
+
+    const allSame = updates.length === NUM_GROUPS && updates.every(u => u.c === updates[0].c);
+    if (allSame) {
+      const state = { c: updates[0].c, e: 'solid', d: 100 };
+      for (let i = 1; i <= NUM_GROUPS; i++) groupStates.set(i, state);
+      audience.volatile.emit('color', state);
+      controller.emit('group-update', { group: 'all', state });
+    } else {
+      for (const u of updates) {
+        const state = { c: u.c, e: 'solid', d: 100 };
+        groupStates.set(u.group, state);
+        audience.to(`group:${u.group}`).volatile.emit('color', state);
+      }
+      const allStates = {};
+      for (let i = 1; i <= NUM_GROUPS; i++) allStates[i] = groupStates.get(i);
+      controller.emit('state-sync', allStates);
+    }
+  });
+
+  artnet.socket.on('error', (err) => {
+    console.error('ArtNet error:', err.message);
+    controller.emit('artnet-status', { active: false, error: err.message });
+  });
+
+  artnet.socket.bind(6454, '0.0.0.0', () => {
+    artnet.active = true;
+    console.log('ArtNet listener started on port 6454');
+    broadcastArtNetStatus();
+  });
+
+  // Status broadcast every 2s
+  artnet.statusInterval = setInterval(() => {
+    const now = Date.now();
+    const elapsed = (now - artnet.lastCountReset) / 1000;
+    artnet.packetsPerSec = elapsed > 0 ? Math.round(artnet.packetsSinceReset / elapsed) : 0;
+    artnet.packetsSinceReset = 0;
+    artnet.lastCountReset = now;
+    broadcastArtNetStatus();
+  }, 2000);
+}
+
+function stopArtNet() {
+  if (!artnet.active) return;
+  if (artnet.statusInterval) clearInterval(artnet.statusInterval);
+  artnet.statusInterval = null;
+  if (artnet.socket) {
+    artnet.socket.close();
+    artnet.socket = null;
+  }
+  artnet.active = false;
+  artnet.sourceIp = null;
+  artnet.packetsPerSec = 0;
+  broadcastArtNetStatus();
+  console.log('ArtNet listener stopped');
+}
+
+function broadcastArtNetStatus() {
+  controller.emit('artnet-status', {
+    active: artnet.active,
+    universe: artnet.universe,
+    startChannel: artnet.startChannel,
+    sourceIp: artnet.sourceIp,
+    packetsPerSec: artnet.packetsPerSec,
+    packetsTotal: artnet.packetsTotal,
+    dmxValues: artnet.dmxValues,
+  });
+}
+
+// Add ArtNet control events to controller namespace
+controller.on('connection', (socket) => {
+  // Send current ArtNet status on connect
+  socket.emit('artnet-status', {
+    active: artnet.active,
+    universe: artnet.universe,
+    startChannel: artnet.startChannel,
+    sourceIp: artnet.sourceIp,
+    packetsPerSec: artnet.packetsPerSec,
+    packetsTotal: artnet.packetsTotal,
+    dmxValues: artnet.dmxValues,
+  });
+
+  socket.on('artnet-start', () => {
+    startArtNet();
+  });
+
+  socket.on('artnet-stop', () => {
+    stopArtNet();
+  });
+
+  socket.on('artnet-config', (data) => {
+    if (data.universe !== undefined) artnet.universe = Number(data.universe) || 0;
+    if (data.startChannel !== undefined) artnet.startChannel = Math.max(1, Number(data.startChannel) || 1);
+    // Reset last sent to force re-send with new config
+    for (let i = 1; i <= NUM_GROUPS; i++) artnet.lastSent[i] = '';
+    broadcastArtNetStatus();
+  });
+});
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`CrowdLight server running on http://localhost:${PORT}`);
