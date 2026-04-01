@@ -365,10 +365,10 @@
 
   playSeqBtn.addEventListener('click', () => {
     if (!socket || !socket.connected || sequence.length === 0) return;
-    // Convert to server format
+    // Convert to server format - send all selected groups per step
     const steps = sequence.map(s => ({
       c: s.c, e: s.e, d: s.d, wait: s.wait,
-      group: s.groups.length === NUM_GROUPS ? 0 : s.groups[0], // simplified
+      groups: s.groups.length === NUM_GROUPS ? [0] : [...s.groups],
     }));
     socket.emit('sequence', { steps });
   });

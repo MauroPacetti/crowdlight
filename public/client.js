@@ -94,12 +94,19 @@
     const effect = data.e || 'solid';
     const duration = data.d || 500;
 
-    // Remove old effect classes
+    // Remove old effect classes and reset animation
     body.classList.remove('effect-solid', 'effect-fade', 'effect-pulse', 'effect-strobe');
+    // Force animation restart by removing and re-adding class
+    body.style.animation = 'none';
+    body.style.transition = 'none';
+    void body.offsetHeight; // Force reflow to reset
 
     // Set CSS custom properties for animation durations
     body.style.setProperty('--pulse-duration', duration + 'ms');
     body.style.setProperty('--strobe-duration', Math.max(50, duration / 5) + 'ms');
+
+    // Clear inline animation/transition override
+    body.style.animation = '';
 
     // Apply effect
     switch (effect) {

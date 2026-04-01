@@ -225,14 +225,25 @@ controller.on('connection', (socket) => {
     let delay = 0;
     for (const step of data.steps.slice(0, 100)) {
       const state = sanitizeState(step);
-      const groupId = Number(step.group) || 0;
+      const targetGroups = Array.isArray(step.groups) ? step.groups : [Number(step.group) || 0];
       setTimeout(() => {
-        if (groupId >= 1 && groupId <= NUM_GROUPS) {
-          groupStates.set(groupId, state);
-          audience.to(`group:${groupId}`).volatile.emit('color', state);
-        } else {
+        const isAll = targetGroups.includes(0);
+        if (isAll) {
           for (let i = 1; i <= NUM_GROUPS; i++) groupStates.set(i, state);
           audience.volatile.emit('color', state);
+          controller.emit('group-update', { group: 'all', state });
+        } else {
+          for (const gId of targetGroups) {
+            const groupId = Number(gId);
+            if (groupId >= 1 && groupId <= NUM_GROUPS) {
+              groupStates.set(groupId, state);
+              audience.to(`group:${groupId}`).volatile.emit('color', state);
+            }
+          }
+          // Sync controller state
+          const allStates = {};
+          for (let i = 1; i <= NUM_GROUPS; i++) allStates[i] = groupStates.get(i);
+          controller.emit('state-sync', allStates);
         }
       }, delay);
       delay += Number(step.wait) || 1000;
