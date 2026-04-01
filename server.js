@@ -6,6 +6,7 @@ const dgram = require('dgram');
 const { stmts } = require('./db');
 const { setupAuthRoutes, verifyToken } = require('./auth');
 const { setupEventRoutes } = require('./routes/events');
+const { setupTunnelRoutes } = require('./tunnel');
 
 const app = express();
 const server = http.createServer(app);
@@ -102,6 +103,7 @@ function sanitizeState(data) {
 // ============ ROUTES ============
 setupAuthRoutes(app);
 setupEventRoutes(app, getEventStats);
+setupTunnelRoutes(app, PORT);
 
 // Page routes
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
@@ -405,7 +407,17 @@ function stopArtNet(state) {
 }
 
 // ============ START ============
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`CrowdLight SaaS running on http://localhost:${PORT}`);
-  console.log(`Dashboard: http://localhost:${PORT}/dashboard`);
-});
+// Only auto-start if run directly (not imported by Electron)
+function startServer(callback) {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`CrowdLight running on http://localhost:${PORT}`);
+    console.log(`Dashboard: http://localhost:${PORT}/dashboard`);
+    if (callback) callback(PORT);
+  });
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { app, server, startServer, PORT };

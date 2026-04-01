@@ -103,7 +103,60 @@
     return div.innerHTML;
   }
 
+  // --- Tunnel ---
+  const tunnelDot = document.getElementById('tunnelDot');
+  const tunnelUrlEl = document.getElementById('tunnelUrl');
+  const tunnelBtn = document.getElementById('tunnelBtn');
+  const tunnelQr = document.getElementById('tunnelQr');
+
+  async function checkTunnelStatus() {
+    try {
+      const data = await api('/api/tunnel/status', 'GET');
+      if (!data) return;
+      updateTunnelUI(data);
+    } catch (e) {}
+  }
+
+  function updateTunnelUI(data) {
+    tunnelDot.className = 'tunnel-dot ' + (data.status === 'connected' ? 'on' : data.status === 'connecting' ? 'connecting' : 'off');
+    if (data.status === 'connected' && data.url) {
+      tunnelUrlEl.textContent = data.url;
+      tunnelBtn.textContent = 'Ferma Tunnel';
+      tunnelBtn.className = 'btn-tunnel stop';
+      // Generate QR for tunnel URL
+      tunnelQr.style.display = '';
+      api(`/api/events/${document.querySelector('.event-card')?.dataset?.slug || '_'}/qr`, 'GET').catch(() => {});
+    } else if (data.status === 'connecting') {
+      tunnelUrlEl.textContent = 'Connessione in corso...';
+      tunnelBtn.disabled = true;
+    } else {
+      tunnelUrlEl.textContent = 'Non attivo - il pubblico non puo collegarsi';
+      tunnelBtn.textContent = 'Avvia Tunnel';
+      tunnelBtn.className = 'btn-tunnel start';
+      tunnelBtn.disabled = false;
+      tunnelQr.style.display = 'none';
+    }
+    if (data.error) {
+      tunnelUrlEl.textContent = 'Errore: ' + data.error;
+    }
+  }
+
+  window.toggleTunnel = async function () {
+    const dot = tunnelDot.className;
+    if (dot.includes('on')) {
+      await api('/api/tunnel/stop', 'POST');
+    } else {
+      tunnelDot.className = 'tunnel-dot connecting';
+      tunnelUrlEl.textContent = 'Connessione in corso...';
+      tunnelBtn.disabled = true;
+      await api('/api/tunnel/start', 'POST');
+      tunnelBtn.disabled = false;
+    }
+    checkTunnelStatus();
+  };
+
   loadEvents();
-  // Refresh every 10s
+  checkTunnelStatus();
   setInterval(loadEvents, 10000);
+  setInterval(checkTunnelStatus, 5000);
 })();

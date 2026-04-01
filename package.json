@@ -5,14 +5,16 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "main": "server.js",
+  "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "electron": "electron .",
+    "build": "electron-builder",
     "bridge": "node artnet-bridge.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "MauroPacetti",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
@@ -20,9 +22,42 @@
     "better-sqlite3": "^12.8.0",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "localtunnel": "^2.0.2",
     "nanoid": "^3.3.11",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.crowdlight.app",
+    "productName": "CrowdLight",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "server.js",
+      "electron-main.js",
+      "db.js",
+      "auth.js",
+      "tunnel.js",
+      "routes/**",
+      "public/**",
+      "artnet-bridge.js",
+      "package.json",
+      "node_modules/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "public/icon.png"
+    }
   }
 }
